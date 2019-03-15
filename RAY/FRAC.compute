@@ -100,11 +100,32 @@ void testFolds()
 //p *= clamp(max(MR2 / dot(p, p), MR2), 0.0, 1.0);
 //p = abs(mod(p + angle.x, angle.x * 4) - angle.x * 2) - angle.x;
 
+
+#define fixedRadius2    (1.1)
+#define minRadius2      (0.11)
+
+float3 sphereFold(float3 z, float dz) {
+	float r2 = dot(z,z);
+	if (r2 < minRadius2) { 
+		// linear inner scaling
+		float temp = (fixedRadius2/minRadius2);
+		z *= temp;
+		dz*= temp;
+	} else if (r2 < fixedRadius2) { 
+		// this is the actual sphere inversion
+		float temp =(fixedRadius2/r2);
+		z *= temp;
+		dz*= temp;
+	}
+	return z;
+}
+
 float2 st;
 float color(float3 p)
 {
 	float	m = 1,
 			o = 1;
+			// p = sphereFold(p + float3(0, 1, 0), 1.0);
 	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
 	for (int n = 0; n < _ColorIterations; n++)
 	{
@@ -128,6 +149,7 @@ float color(float3 p)
 
 float map(float3 p)
 {
+		// p = sphereFold(p + float3(0, 1, 0), 1.0);
 	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
 	for (int n = 0; n < _Iterations; n++)
 	{
