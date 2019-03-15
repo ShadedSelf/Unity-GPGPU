@@ -10,10 +10,10 @@
 
         CGPROGRAM
         // Physically based Standard lighting model
-        #pragma surface surf Standard addshadow fullforwardshadows vertex:vert
+        #pragma surface surf Standard addshadow fullforwardshadows //vertex:vert
         #pragma multi_compile_instancing
         #pragma instancing_options procedural:setup
-		#pragma target 5.0
+		//#pragma target 5.0
 
         sampler2D _MainTex;
 		float3 _Color;

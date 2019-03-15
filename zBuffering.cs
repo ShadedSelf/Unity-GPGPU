@@ -8,7 +8,7 @@ public class zBuffering : MonoBehaviour
 
 	[Header("^^")]
 	public int particleCount = 100000;
-	public int recursions = 1;
+	public int iterations = 1;
 	public float radius = .1f;
 	[Header("Compute Shaders")]
 	public ComputeShader particleCS;
@@ -100,9 +100,9 @@ public class zBuffering : MonoBehaviour
 	Vector3 lastPos;
 	void Update()
 	{
-		particleCS.SetFloat("deltaTime", Time.deltaTime * dTMult);
+		particleCS.SetFloat("deltaTime", Time.deltaTime * dTMult / (float)iterations);
 		particleCS.SetFloat("time", Time.time);
-		particleCS.SetFloat("antiMovement", rad);
+		particleCS.SetFloat("particleRad", rad);
 		particleCS.SetFloat("rest", rest);
 		particleCS.SetFloat("maxVelocity", maxVelocity);
 		particleCS.SetFloat("radius", radius);
@@ -167,7 +167,7 @@ public class zBuffering : MonoBehaviour
 		commandBuffer.DispatchCompute(particleCS, findKernel, particleCount / 32, 1, 1);
 		commandBuffer.EndSample("Find");
 
-		for (int i = 0; i < recursions; i++)
+		for (int i = 0; i < iterations; i++)
 		{
 			commandBuffer.BeginSample("Lamb");
 			commandBuffer.DispatchCompute(particleCS, lambKernel, particleCount / 32, 1, 1);

@@ -102,10 +102,10 @@ public class RecursionPort : MonoBehaviour
 		}
 	}
 
-	private float eps = 0.0010011f; //0.0100011f
+	private float eps = 0.0010011f;
 	void OnTriggerStay(Collider thing)
 	{
-		if (transform.InverseTransformPoint(thing.transform.position).z >= -0.001001) //-0.010001
+		if (transform.InverseTransformPoint(thing.transform.position).z >= -0.001001)
 		{
 			if (thing.GetComponent<RBController>() != null)
 			{

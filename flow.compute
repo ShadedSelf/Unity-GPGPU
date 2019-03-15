@@ -17,7 +17,7 @@ RWStructuredBuffer<Nei> neisBuffer;
 StructuredBuffer<Cubes> cubes;
 
 float deltaTime;
-float antiMovement;
+float particleRad;
 float rest;
 float maxVelocity;
 float time;
@@ -72,8 +72,8 @@ float3 calcNormal(in float3 pos)
 void Particler (uint3 id : SV_DispatchThreadID)
 {
 	float3 vel = (p[id.x].xyz - pos[id.x].xyz) / deltaTime;
-	//vel += gravity * deltaTime;
-	vel += -calcNormalG(p[id.x].xyz) * deltaTime;
+	vel += gravity * deltaTime;
+	// vel += -calcNormalG(p[id.x].xyz) * deltaTime;
 	vel *= (length(vel) > maxVelocity) ? maxVelocity / pow(length(vel), 2) : .995;
 
 	pos[id.x].xyz = p[id.x].xyz;
@@ -100,10 +100,10 @@ void Lamb(uint3 id : SV_DispatchThreadID)
 	for (uint i = 0; i < neisBuffer[id.x].num; ++i)
 	{
 		ot = p[neisBuffer[id.x].neis[i]].xyz;
-		den += W(me - ot, antiMovement);
-		pet = WS(me - ot, antiMovement) / rest;
+		den += W(me - ot, particleRad);
+		pet = WS(me - ot, particleRad) / rest;
 		petsum += pow(length(pet), 2);
-		petI += WS(me - ot, antiMovement);
+		petI += WS(me - ot, particleRad);
 	}
 
 	if (map(me) >= -radius)
@@ -127,9 +127,9 @@ void Collision(uint3 id : SV_DispatchThreadID)
 	for (uint i = 0; i < neisBuffer[id.x].num ; ++i)
 	{
 		ot = p[neisBuffer[id.x].neis[i]];
-		float tmp = pow(W(me.xyz - ot.xyz, antiMovement) / W(antiMovement * mQ, antiMovement), mE); //hmm nan
+		float tmp = pow(W(me.xyz - ot.xyz, particleRad) / W(particleRad * mQ, particleRad), mE); //hmm nan
 		float co = -mK * ((isnan(tmp)) ? 0.0000 : tmp); //hm
-		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, antiMovement);
+		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad);
 	}
 
 	dp /= rest;
@@ -161,7 +161,7 @@ void Find(uint3 id : SV_DispatchThreadID)
 			{
 				if (num > 49) break;
 				uint pID = collisionBuffer[i].particleID;
-				if (distance(me, p[pID].xyz) < antiMovement && id.x != pID)
+				if (distance(me, p[pID].xyz) < particleRad && id.x != pID)
 				{
 					neisBuffer[id.x].neis[num] = pID;
 					num++;
