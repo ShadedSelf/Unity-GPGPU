@@ -1,0 +1,210 @@
+﻿#pragma kernel CSMain
+#include "RayThings.cginc"
+
+RWTexture2D<float4> Result;
+Texture2D<float3> Noise;
+SamplerState samplerNoise;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+float _L;
+
+float2 angle;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+float projectionMult;
+
+float minT;
+float maxT;
+float kk;
+
+int2 pixel;
+float2 uv;
+int texSize;
+
+float _Time;
+
+float3 rd;
+float3 ro;
+
+float3 _Pos;
+float3 _Size;
+float _HolePC;
+float3 _CrossPC;
+float _BoxPC;
+
+float mapW(float3 p)
+{
+	return sdBox(p, float3(2, 2, 3));
+}
+
+float map(float3 p)
+{
+	float o = sdBox(p, float3(3, 3, 3));
+	float oo = sdBox(p, float3(2, 2, 3.1));
+
+	float cubes = min(min(sdBox(p + float3(0, 0, -6), 1), sdBox(p + float3(-4, 0, -6), 1)), sdBox(p + float3(4, 0, -6), 1));
+
+	return min(max(o, -oo), cubes);
+}
+
+float3 calcNormal(in float3 pos)
+{
+	/*float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize(e.xyy*map(pos + e.xyy) +
+	e.yyx*map(pos + e.yyx) +
+	e.yxy*map(pos + e.yxy) +
+	e.xxx*map(pos + e.xxx));*/
+
+	float3 eps = float3(0.0001, 0.0, 0.0);
+	float3 nor = float3(
+		map(pos + eps.xyy).x - map(pos - eps.xyy).x,
+		map(pos + eps.yxy).x - map(pos - eps.yxy).x,
+		map(pos + eps.yyx).x - map(pos - eps.yyx).x);
+	return normalize(nor);
+}
+
+float getCols(float3 normal)
+{
+	float doter = dot(-_LightDir.xyz, normal);
+
+	float color = doter * .5 + .5;
+	return color + (1 - color) * _L;
+}
+
+float shadow(float3 ro, float3 rd, float mint, float maxt)
+{
+	for (float t = mint; t < maxt; )
+	{
+		float h = map(ro + rd * t);
+		if (h < 0.001)
+			return h;
+		t += h;
+	}
+	return 1.0;
+}
+
+
+bool raymarch(out float4 pos)
+{
+	float t = 0;
+	float tW = 0;
+	float d = 0;
+	float dW = 0;
+	float3 p = ro + rd * t;
+	bool W = true;
+	float w = 1;
+	float3 warp = 1;
+	int hit = 0;
+	for (int i = 0; i < maxSteps; ++i)
+	{
+		if (t > drawDist)
+		{
+			pos.xyz = p;
+			pos.w = (float)i / maxSteps;
+			return false;
+		}
+		p = ro + rd * warp * t;
+		d = map(p);
+
+		if (W)
+		{
+			dW = mapW(p);
+			d = min(d, dW);
+			if (dW < epSI)
+			{
+				W = false;
+				float temp = dot(calcNormal(ro), rd);
+				t = lerp(.007, .02, temp);
+				temp = clamp(ro.z, -3.0, 3.0);
+				temp = lerp(1, 0, (temp + 3.0) / 6.0);
+				warp = float3(1, 1, lerp(1, kk, temp));
+				w = 1.0 / kk;
+				hit = i;
+				ro = p;
+				continue;
+			}
+		}
+		/*else if (!W && i > hit)
+		{
+			if (abs(dW) < d && abs(dW) < epSI)
+			{
+				W = true;
+				ro = p;
+				t = .02;
+				warp = float3(1, 1, 1);
+				w = 1;
+				hit = i;
+				continue;
+			}
+			d = min(d, abs(dW));
+			/*if (abs(dW) < d && dW < 0)
+				d = .02;
+			else if (dW > 0)
+				d = -dW;*/
+		//}
+
+		if (d < epSI)
+		{
+			pos.xyz = p;
+			pos.w = (float)i / maxSteps;
+			return true;
+		}
+		//float temp = abs(dot(rd, float3(0, 0, 1)));
+		//t += d * lerp(1, w, temp);
+		t += d * w;
+	}
+	pos.xyz = p;
+	pos.w = (float)i / maxSteps;
+	return true;
+}
+
+float shade(float3 p)
+{
+	float ret = 1;
+
+	float3 n = calcNormal(p);
+	float s = shadow(p - _LightDir * .001 + n * .01, -_LightDir, minT, maxT);
+	float doter = dot(-_LightDir.xyz, n);
+
+	s = (doter <= 0 || s < .5) ? lerp(1, .85, abs(doter)) : 1;
+	ret = getCols(n) * s;
+
+	float3 ner = normalize(reflect(rd, n)) + (rand(p.xyz * _Time) - .5) * .1;
+	ret += saturate(dot(ner, -_LightDir) * .5 + .5) / 10 * s;
+
+	return ret;
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	pixel = id.xy;
+
+	uv = float2((float)id.x / texSize, (float)id.y / texSize);
+
+	float x = (uv.x - .5) * projectionMult;
+	float y = (uv.y - .5) * projectionMult;
+
+	ro = (right * x + up * y) + eye + fw * fwMult;
+	rd = normalize(ro - eye);
+
+	float temp = 0;
+
+	float4 pos = 0;
+	if (raymarch(pos))
+	{
+		temp = shade(pos.xyz);
+	}
+
+	Result[id.xy] = float4(temp.xxx, 1);
+}
+

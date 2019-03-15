@@ -1,0 +1,219 @@
+﻿#pragma kernel CSMain
+#include "RayThings.cginc"
+#include "MatrixThings.cginc"
+
+RWTexture2D<float4> Result;
+Texture2D<float3> Noise;
+SamplerState samplerNoise;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+float _L;
+
+float2 angle;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+float projectionMult;
+
+float minT;
+float maxT;
+float kk;
+
+int2 pixel;
+float2 uv;
+int texSize;
+
+float _Time;
+
+float3 rd;
+float3 ro;
+
+float3 _Pos;
+float3 _Size;
+float _HolePC;
+float3 _CrossPC;
+float _BoxPC;
+
+float oSphere(float3 pos, float3 nor, float4 sph)
+{
+	float3  r = sph.xyz - pos;
+	float l = length(r);
+	float d = dot(nor, r);
+	float res = d;
+
+	if (d < sph.w) res = pow(clamp((d + sph.w) / (2.0*sph.w), 0.0, 1.0), 1.5)*sph.w;
+
+	return clamp(res*(sph.w*sph.w) / (l*l*l), 0.0, 1.0);
+}
+
+float3 nSphere(float3 pos, float4 sph)
+{
+	return (pos - sph.xyz) / sph.w;
+}
+
+float iSphere(float3 ro, float3 rd, float4 sph)
+{
+	float3 oc = ro - sph.xyz;
+	float b = dot(oc, rd);
+	float c = dot(oc, oc) - sph.w * sph.w;
+	float h = b * b - c;
+	if (h < 0.0) return -1.0;
+	return -b - sqrt(h);
+}
+
+float4 spheres[128 * 2];
+int sphereNum;
+
+float occlusion(float3 pos, float3 nor, int id)
+{
+	float res = 1.0;
+	for (int i = 0; i < sphereNum; i++)
+		res *= 1.0 - oSphere(pos, nor, spheres[i]);
+	return res;
+}
+
+float shadow(float3 ro, float3 rd, int id)
+{
+	float res = 1e20;
+	float fou = -1.0;
+
+	for (int i = 0; i < sphereNum; i++)
+	{
+		//if (i == id) continue;
+		float4 sph = spheres[i];
+		float t = iSphere(ro, rd, sph);
+		if (t > epSI && t < res)
+		{
+			res = t;
+			fou = 1.0;
+			id = float(i);
+		}
+	}
+
+	return fou * res;
+}
+
+float intersect(float3 ro, float3 rd, out float3 nor, out int id)
+{
+	float res = 1e20;
+	float fou = -1.0;
+
+	nor = 0;
+	for (int i = 0; i < sphereNum; i++)
+	{
+		//if (i == id) continue;
+		float4 sph = spheres[i];
+		float t = iSphere(ro, rd, sph);
+		if (t > epSI && t < res)
+		{
+			res = t;
+			nor = nSphere(ro + t * rd, sph);
+			fou = 1.0;
+			id = float(i);
+		}
+	}
+
+	return fou * res;
+}
+
+void init()
+{
+	//sphereNum = 9;
+	//for (int i = 0; i < sphereNum; i++)
+		//spheres[i] = float4(((rand((float3)i) - .5) * 10), 1/* + rand(i * i + 1) * .1*/) * float4(1, 0, 1, 1);
+	sphereNum = 2;
+	spheres[0] = float4(0, 0, 0, 1);
+	spheres[1] = float4(0, -9999, 0, 9999 - 1);
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	pixel = id.xy;
+	epSI = .0000001;
+
+	uv = float2((float)id.x / texSize, (float)id.y / texSize);
+	float2 screen = (uv - .5) * projectionMult;
+
+	ro = (right * screen.x + up * screen.y) + eye + fw * fwMult;
+	rd = normalize(ro - eye);
+	//ro = eye;
+	init();
+
+
+	float3 temp = 0;
+	float3 nor;
+	int ide;
+	float t = intersect(ro, rd, nor, ide);
+	if (t > 0)
+	{
+		float3 wpos = spheres[ide].xyz + nor * spheres[ide].w;
+		float d = saturate(dot(nor, -_LightDir));
+		temp = d * clamp((shadow(wpos, -_LightDir, ide) < 0), .25, 1);
+		//temp *= occlusion(wpos, nor, ide);
+
+		//float fre = saturate(1.0 + dot(rd, nor));
+		float fre = (angle.x + angle.y * pow(1 + dot(rd, nor), 3.5));
+
+		if (ide == 1)
+			temp *= (floor(wpos.x) % 2 == 0) ? 1 : (floor(wpos.z) % 2 == 0) ? .5 : 1;
+		else
+		{
+			float3 tnor;
+			float reflection = saturate(ceil(intersect(wpos, reflect(rd, nor), tnor, ide)));
+			float3 twpos = spheres[ide].xyz + tnor * spheres[ide].w;
+			reflection *= saturate(dot(tnor, -_LightDir)) * clamp((shadow(twpos, -_LightDir, ide) < 0), .25, 1);
+			reflection *= (floor(twpos.x) % 2 == 0) ? 1 : (floor(twpos.z) % 2 == 0) ? .5 : 1;
+
+			float refraction = saturate(ceil(intersect(wpos - nor * .0001, refract(rd, nor, .4), tnor, ide)));
+			twpos = spheres[ide].xyz + tnor * spheres[ide].w;
+			refraction *= saturate(dot(tnor, -_LightDir)) * clamp((shadow(twpos, -_LightDir, ide) < 0), .25, 1);
+			refraction *= (floor(twpos.x) % 2 == 0) ? 1 : (floor(twpos.z) % 2 == 0) ? .5 : 1;
+
+			temp = lerp(reflection, refraction, 1 - fre);
+
+			temp = lerp(refraction, 0, fre);
+			temp = lerp(temp, reflection, fre);
+			temp += fre;
+		}
+
+
+		/*float3 o = ro;
+		float m = 0;
+		for (int i = 0; i < 64; i++)
+		{
+			o = lerp(ro, ro + rd * t, (float)i / 64) + (rand(ro) * .5 + .5) * .1;
+			if (shadow(o, -_LightDir, ide) > 0)
+				m += t * .001;
+		}
+		temp *= 1 - m;*/
+
+		/*for (int i = 0; i < 1; i++)
+		{
+			t = intersect(wpos, reflect(rd, nor), nor, ide);
+			//if (t > 0)
+			{
+				rd = nor;
+				wpos = spheres[ide].xyz + nor * spheres[ide].w;
+				t = saturate(ceil(t));
+				float tt = t * saturate(dot(nor, -_LightDir)) * (shadow(wpos, -_LightDir, ide) < 0);
+				if (ide == 1)
+					tt *= (floor(wpos.x) % 2 == 0) ? 1 : (floor(wpos.z) % 2 == 0) ? .5 : 1;
+				temp = lerp(temp, tt, fre);
+			}
+			if (t > 0) break;
+		}*/
+	}
+
+	temp = pow(temp, 1. / 2.2);
+	Result[id.xy] = float4(temp, 1);
+}
+

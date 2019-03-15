@@ -1,0 +1,198 @@
+﻿#pragma kernel Particler	//0
+// #pragma kernel TrueLimits	//1
+// #pragma kernel Clear		//2
+// #pragma kernel Collision	//3
+// #pragma kernel Find			//4
+// #pragma kernel Lamb			//5
+// #pragma kernel Test			//6
+
+// #include "ComputeThings.cginc"
+
+// RWStructuredBuffer<float4> pos;
+// RWStructuredBuffer<float4> p;
+// RWStructuredBuffer<CollisionData> collisionBuffer;
+// RWStructuredBuffer<Grid> gridBuffer;
+// RWStructuredBuffer<Nei> neisBuffer;
+
+// StructuredBuffer<Cubes> cubes;
+
+// float deltaTime;
+// float antiMovement;
+// float rest;
+// float maxVelocity;
+// float time;
+// float radius;
+// float mass;
+// float mK;
+// float mQ;
+// float mE;
+
+// int particleCount;
+// int cubeCount;
+
+// float3 ext;
+// float3 gravity;
+// float3 worldSize;
+
+// float4x4 rot;
+
+// int3 gridSize;
+
+// float mapG(float3 p)
+// {
+// 	return sdTorus(p, float2(3, 1));
+// }
+
+// float3 calcNormalG(in float3 pos)
+// {
+// 	const float2 eps = float2(0.00001, 0.0);
+// 	float3 nor = float3(
+// 		mapG(pos + eps.xyy).x - mapG(pos - eps.xyy).x,
+// 		mapG(pos + eps.yxy).x - mapG(pos - eps.yxy).x,
+// 		mapG(pos + eps.yyx).x - mapG(pos - eps.yyx).x);
+// 	return normalize(nor);
+// }
+
+// float map(float3 p)
+// {
+// 	return max(sdBox(p, worldSize), -sdBox(mul((float3x3)rot, p - cubes[0].position), cubes[0].scale + radius));
+// }
+
+// float3 calcNormal(in float3 pos)
+// {
+// 	const float2 eps = float2(0.00001, 0.0);
+// 	float3 nor = float3(
+// 		map(pos + eps.xyy).x - map(pos - eps.xyy).x,
+// 		map(pos + eps.yxy).x - map(pos - eps.yxy).x,
+// 		map(pos + eps.yyx).x - map(pos - eps.yyx).x);
+// 	return normalize(nor);
+// }
+
+[numthreads(32, 1, 1)]
+void Particler(uint3 id : SV_DispatchThreadID)
+{
+	float3 vel = (p[id.x].xyz - pos[id.x].xyz) / deltaTime;
+	//vel += gravity * deltaTime;
+	vel += -calcNormalG(p[id.x].xyz) * deltaTime;
+	vel *= (length(vel) > maxVelocity) ? maxVelocity / pow(length(vel), 2) : .995;
+
+	pos[id.x].xyz = p[id.x].xyz;
+	p[id.x].xyz = pos[id.x].xyz + vel * deltaTime;
+
+	float3 aOne = normalizeFloat3(p[id.x].xyz, -worldSize, worldSize);
+	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
+	//int3 gridTemp = floor(clamp(aOne * worldSize * 2 / .2, 0, round(worldSize * 2 / .2) - 1));
+
+	collisionBuffer[id.x].cell = fromGridToIndex((uint3)gridTemp, gridSize);
+	collisionBuffer[id.x].particleID = id.x;
+}
+
+// [numthreads(32, 1, 1)]
+// void Lamb(uint3 id : SV_DispatchThreadID)
+// {
+// 	float den = 0;
+// 	float3 pet = ZERO;
+// 	float3 petI = ZERO;
+// 	float petsum = 0;
+// 	float3 ot = 0;
+// 	float3 me = p[id.x].xyz;
+
+// 	for (uint i = 0; i < neisBuffer[id.x].num; ++i)
+// 	{
+// 		ot = p[neisBuffer[id.x].neis[i]].xyz;
+// 		den += W(me - ot, antiMovement);
+// 		pet = WS(me - ot, antiMovement) / rest;
+// 		petsum += pow(length(pet), 2);
+// 		petI += WS(me - ot, antiMovement);
+// 	}
+
+// 	if (map(me) >= -radius)
+// 		den += rest / 4;
+
+// 	petI /= rest;
+// 	petsum += pow(length(petI), 2);
+// 	petsum += mass;
+// 	float l = den / rest - 1;
+// 	float lambda = -l / petsum;
+// 	p[id.x].w = lambda;
+// }
+
+// [numthreads(32, 1, 1)]
+// void Collision(uint3 id : SV_DispatchThreadID)
+// {
+// 	float3 dp = ZERO;
+// 	float4 ot = 0;
+// 	float4 me = p[id.x];
+
+// 	for (uint i = 0; i < neisBuffer[id.x].num ; ++i)
+// 	{
+// 		ot = p[neisBuffer[id.x].neis[i]];
+// 		float tmp = pow(W(me.xyz - ot.xyz, antiMovement) / W(antiMovement * mQ, antiMovement), mE); //hmm nan
+// 		float co = -mK * ((isnan(tmp)) ? 0.0000 : tmp); //hm
+// 		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, antiMovement);
+// 	}
+
+// 	dp /= rest;
+// 	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0);
+
+// 	p[id.x].xyz += dp;
+// }
+
+// [numthreads(32, 1, 1)]
+// void Find(uint3 id : SV_DispatchThreadID)
+// {
+// 	float3 me = p[id.x].xyz;
+// 	float3 aOne = normalizeFloat3(me, -worldSize, worldSize);
+// 	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
+// 	//int3 gridTemp = floor(clamp(aOne * worldSize * 2 / .2, 0, round(worldSize * 2 / .2) - 1));
+
+// 	uint num = 0;
+// 	for (int x = -1; x < 2; ++x)
+// 	for (int y = -1; y < 2; ++y)
+// 	for (int z = -1; z < 2; ++z)
+// 		if (
+// 		gridTemp.x + x > -1 && gridTemp.x + x < gridSize.x &&
+// 		gridTemp.y + y > -1 && gridTemp.y + y < gridSize.y &&
+// 		gridTemp.z + z > -1 && gridTemp.z + z < gridSize.z)
+// 		{
+// 			uint cell = fromGridToIndex((uint3)(gridTemp + int3(x, y, z)), gridSize);
+
+// 			for (uint i = gridBuffer[cell].start; i < gridBuffer[cell].end; ++i)
+// 			{
+// 				if (num > 49) break;
+// 				uint pID = collisionBuffer[i].particleID;
+// 				if (distance(me, p[pID].xyz) < antiMovement && id.x != pID)
+// 				{
+// 					neisBuffer[id.x].neis[num] = pID;
+// 					num++;
+// 				}
+// 			}
+// 		}
+
+// 	neisBuffer[id.x].num = num;
+// }
+
+// [numthreads(32, 1, 1)]
+// void TrueLimits(uint3 id : SV_DispatchThreadID)
+// {
+// 	uint cell = collisionBuffer[id.x].cell;
+
+// 	if (collisionBuffer[max(id.x - 1, 0)].cell != cell) //max
+// 		gridBuffer[cell].start = id.x;
+// 	if (collisionBuffer[id.x + 1].cell != cell) //y no min
+// 		gridBuffer[cell].end = id.x + 1;
+// }
+
+// [numthreads(128, 1, 1)]
+// void Clear(uint3 id : SV_DispatchThreadID)
+// {
+// 	gridBuffer[id.x].start = 0;
+// 	gridBuffer[id.x].end = 0;
+// }
+
+// [numthreads(32, 1, 1)]
+// void Test(uint3 id : SV_DispatchThreadID)
+// {
+// 	//p[id.x] = p[collisionBuffer[id.x].particleID];
+// 	//pos[id.x] = pos[collisionBuffer[id.x].particleID];
+// }

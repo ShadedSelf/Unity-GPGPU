@@ -1,0 +1,154 @@
+﻿#pragma kernel CSMain
+#include "RayThings.cginc"
+#include "MatrixThings.cginc"
+
+RWTexture2D<float4> Result;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+float _L;
+
+float2 angle;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+float projectionMult;
+
+float minT;
+float maxT;
+float kk;
+
+int2 pixel;
+float2 uv;
+int texSize;
+
+float _Time;
+int _Frame;
+
+float3 rd;
+float3 ro;
+
+float3 _Pos;
+float3 _Size;
+float _HolePC;
+float3 _CrossPC;
+float _BoxPC;
+
+float random(in vec2 st) {
+	return fract(sin(dot(st.xy, vec2(12.9898, 78.233))) * 43758.1);
+}
+
+float noise(vec2 p) {
+	vec2 i = ceil(p);
+	vec2 f = fract(p);
+	vec2 u = f * f * (3. - 2. * f);
+	float a = random(i);
+	float b = random(i + vec2(1., 0.));
+	float c = random(i + vec2(0., 1.));
+	float d = random(i + vec2(1., 1.));
+	return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+
+float fbm(in vec2 p) {
+	float s = 0.0;
+	float m = 0.0;
+	float a = 0.5;
+	for (int i = 0; i < 8; i++) {
+		s += a * noise(p);
+		m += a;
+		a *= 0.5;
+		p *= 2.0;
+	}
+	return s / m;
+}
+
+float map(float3 p)
+{
+	p.y += fbm(p.xz * angle.x);
+	float ret = sdBox(p + float3(0, 0, 0), float3(10, 1, 10));
+
+	/*ret = min(ret, sdBox(p - float3(-5, 0, -5), float3(1, 10, 10)));
+	ret = min(ret, sdBox(p - float3(-30, 0, 10), 10));
+	ret = min(ret, sdBox(p - float3(-20, 0, 30), float3(20, 10, 10)));*/
+
+	return ret;
+}
+
+
+float3 calcNormal(in float3 pos)
+{
+	float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize
+	(
+		e.xyy * map(pos + e.xyy) +
+		e.yyx * map(pos + e.yyx) +
+		e.yxy * map(pos + e.yxy) +
+		e.xxx * map(pos + e.xxx)
+	);
+}
+
+float shadow(in float3 ro, in float3 rd, float mint, float maxt)
+{
+	for (float t = mint; t < maxt; )
+	{
+		float h = map(ro + rd * t);
+		if (h < 0.001)
+			return 0.0;
+		t += h;
+	}
+	return 1.0;
+}
+
+bool raymarchW(out float4 pos)
+{
+	float t = 0;
+	float d = 0;
+	int i = 0;
+	do
+	{
+		d = map(ro + rd * t);
+		t += d * .5;
+	} while (i++ < maxSteps && t < drawDist && d > epSI);
+
+	pos.xyz = ro + rd * t;;
+	pos.w = i;
+	return (t < drawDist);
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	pixel = id.xy;
+
+	uv = float2((float)id.x / texSize, (float)id.y / texSize);
+	float2 screen = (uv - .5) * projectionMult;
+
+	ro = (right * screen.x + up * screen.y) + eye + fw * fwMult;
+	rd = normalize(ro - eye);
+
+	float4 pos;
+	float4 temp = 0;
+	if (raymarchW(pos))
+	{
+		float3 n = calcNormal(pos.xyz);
+
+		temp = normalize(float4(pos.xyz, 1)).w;
+		//temp = lerp(temp, dot(n, normalize(-pos.xyz) * .5 + .5), .01);
+		temp = 1 - (pos.w / maxSteps);
+
+		if (shadow(pos.xyz + n * .01, normalize(-pos.xyz), .01, length(pos.xyz)) < .5)
+		{
+			temp *= .75;
+		}
+	}
+
+	temp = pow(temp, 1 / 2.2);
+	Result[id.xy] = temp;
+}

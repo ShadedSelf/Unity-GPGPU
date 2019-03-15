@@ -1,0 +1,207 @@
+﻿#pragma kernel CSMain
+#pragma kernel Move
+#include "RayThings.cginc"
+#include"2DRayInclude.hlsl"
+
+RWTexture2D<float4> Result;
+Texture2D<float3> Noise;
+SamplerState samplerNoise;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+float _L;
+
+float2 angle;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+float projectionMult;
+
+float minT;
+float maxT;
+float kk;
+
+int2 pixel;
+float2 uv;
+int texSize;
+
+float _Time;
+
+float3 rd;
+float2 ro;
+
+float3 _Pos;
+float3 _Size;
+float _HolePC;
+float3 _CrossPC;
+float _BoxPC;
+
+float map(float2 p)
+{
+	/*float c = cos(angle.x * 3.14159 * 2 / 10);
+	float s = sin(angle.x * 3.14159 * 2 / 10);
+	float2x2 m = float2x2(c, -s, s, c);
+	p = mul(m, p);*/
+	//p = float2(p.x * c - p.y * s, p.y * c + p.x * s);
+
+	float b0 = sdBox2D(p, _Size.xy);
+	float b1 = sdBox2D(p + float2(0, 5), float2(5, 1));
+	float b2 = min(sdBox2D(p + float2(4, 5), float2(.2, 1.2)), sdBox2D(p + float2(-4, 5), float2(2, 1.8)));
+	float me = sdBox2D(p - _Player[0].pos, float2(.2, .4));
+
+	return lineDist(p, float2(-2, 0), float2(2, 0), .03);
+
+	return min(min(min(b0, b1), me), b2);
+}
+
+float mapNoMe(float2 p)
+{
+	float b0 = sdBox2D(p, _Size.xy);
+	float b1 = sdBox2D(p + float2(0, 5), float2(5, 1));
+	float b2 = min(sdBox2D(p + float2(4, 5), float2(.2, 1.2)), sdBox2D(p + float2(-4, 5), float2(2, 1.8)));
+
+	return min(min(b0, b1), b2);
+}
+
+float2 calcNormal(float2 pos)
+{
+	/*float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize(e.xyy*map(pos + e.xyy) +
+	e.yyx*map(pos + e.yyx) +
+	e.yxy*map(pos + e.yxy) +
+	e.xxx*map(pos + e.xxx));*/
+
+	float2 eps = float2(0.0001, 0.0);
+	float2 nor = float2(
+		map(pos + eps.xy).x - map(pos - eps.xy).x,
+		map(pos + eps.yx).x - map(pos - eps.yx).x);
+	return normalize(nor);
+}
+
+float shadow(float2 p, float2 pos, float radius)
+{
+	float2 dir = normalize(pos - p);
+	float dist = distance(p, pos);
+	float t = 0;
+	float ret = 1;
+	float sd = 111;
+	for (int i = 0; i < 50; ++i)
+	{
+		if (t > dist || t > radius)
+			break;
+		sd = map(p + dir * t);
+		if (sd < epSI)
+		{
+			ret = 0;
+			break;
+		}
+		t += sd;
+	}
+	return ret;
+}
+
+float2 input;
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	pixel = id.xy;
+
+	uv = float2((float)id.x / (texSize - 1), (float)id.y / (texSize - 1));
+	float2 uvrand = rand(uv) - .5;
+	float2 bluerand = (Noise.SampleLevel(samplerNoise, uv, 0).xy - .5) * fwMult;
+
+	ro = ((uv * 2 - 1) * -eye.z) * projectionMult + eye.xy;
+
+	if (distance(_LightDir.xy, ro) < kk)
+	{
+		ro += normalize(_LightDir.xy - ro) * pow((1 - distance(_LightDir.xy, ro) / kk), 2);
+		//ro += normalize(ro - _LightDir.xy) * pow((distance(_LightDir.xy, ro) / kk), 7);
+		_Time += pow((1 - distance(_LightDir.xy, ro) / kk), 2) * 120;
+	}
+	/*for (int i = 0; i < 5; i++)
+	{
+		if (ro.x > 3 && ro.x < 5 && ro.y < -2 && ro.y > -4)
+		{
+			ro.x = lerp(5, -5, (5 - ro.x) / 2);
+			ro.y = lerp(5, -5, (2 + ro.y) / -2);
+		}
+	}*/
+
+
+	uvrand = rand(ro * _Time) - .5;
+	uvrand *= fwMult;
+
+
+	float raid = saturate(min(step(abs((frac(ro.x) - .5) * 2), .85), step(abs((frac(ro.y) - .5) * 2), .85)) + .5);
+	raid = saturate(min(step(abs((frac(ro.x) - .5) * 2), .8), step(abs((frac(ro.y) - .5) * 2), .8)));
+	float xx = step(abs((frac(ro.x * 3) - .5) * 2), .8);
+	float yy = step(abs((frac(ro.y * 3) - .5) * 2), .8);
+	float raid2 = step(min(xx, yy), .99);
+
+	raid = max(raid, raid2);
+	float4 temp = saturate(raid + .5);
+
+	float d = map(ro);
+
+	float light = 1 - saturate(distance(_LightDir.xy + (rand(ro) - .5) * .25, ro) / 30);
+	light *= pow(light, 5);
+	temp = raid * .5;
+	temp *= light;
+
+	float sha = saturate(shadow(ro, _LightDir.xy + (uvrand * kk), 11) + .25);
+	if (sha < .5)
+	{
+		float2 srd = normalize(_LightDir.xy - ro);
+		float2 nor = normalize(cross(float3(srd, 0), float3(0, 0, 1)).xy);
+
+		float s1 = shadow(ro, _LightDir.xy + (uvrand * kk) + nor * kk, 11);
+		float s2 = shadow(ro, _LightDir.xy + (uvrand * kk) - nor * kk, 11);
+
+		if (sha < .5 && max(s1, s2) > .5)
+			sha = .75;
+	}
+
+	temp *= sha;
+	temp *= AO(1, .5, d);
+
+
+
+	if (d < 0)
+	{
+		temp = 1;
+		if(d < -.1) temp = 0;
+	}
+
+	if (sdBox2D(ro - _Player[0].pos, float2(.2, .4)) < 0)
+	{
+		temp = float4(rain(0, _Time / 100), 1);
+		if (d < -.1) temp = 0;
+	}
+
+	temp.w = 1;
+	Result[id.xy] = temp;
+}
+
+[numthreads(1, 1, 1)]
+void Move(uint3 id : SV_DispatchThreadID)
+{
+	/*_Player[0].pos.x += input.x * .1;
+	_Player[0].pos.y -= .2;
+
+	float der = map(_Player[0].pos);
+	if (der < 0)
+		_Player[0].pos -= calcNormal(_Player[0].pos) * der;*/
+
+	float d = mapNoMe(_Player[0].pos - float2(0, .2));
+	_Player[0].pos.y -= ((d >= .2) ? .2 : d);
+	d = mapNoMe(_Player[0].pos + float2(input.x * .1, 0));
+	_Player[0].pos.x += (d > input.x * .1) ? input.x * .1 : d;
+}

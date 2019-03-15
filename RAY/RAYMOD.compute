@@ -1,0 +1,204 @@
+﻿#pragma kernel CSMain
+#include "RayThings.cginc"
+#include "MatrixThings.cginc"
+
+RWTexture2D<float4> Result;
+Texture2D<float3> Noise;
+SamplerState samplerNoise;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+float _L;
+
+float2 angle;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+float projectionMult;
+
+float minT;
+float maxT;
+float kk;
+
+int2 pixel;
+float2 uv;
+int texSize;
+
+float _Time;
+
+float3 rd;
+float3 ro;
+
+float3 _Pos;
+float3 _Size;
+float _HolePC;
+float3 _CrossPC;
+float _BoxPC;
+
+float smin(float a, float b, float s) {
+
+	float h = clamp(0.5 + 0.5*(b - a) / s, 0., 1.);
+	return lerp(b, a, h) - h * (1.0 - h)*s;
+}
+
+float smax(float a, float b, float s) {
+
+	float h = clamp(0.5 + 0.5*(a - b) / s, 0., 1.);
+	return lerp(b, a, h) + h * (1.0 - h)*s;
+}
+
+float2x2 r2(float th) { float2 a = sin(float2(1.5707963, 0) + th); return float2x2(a, -a.y, a.x); }
+
+float3 opPolarTwist(float3 p, float radius, float inWarp, float rot)
+{
+	float a = atan2(p.z, p.x);
+	p.xz = mul(r2(a), p.xz);
+	p.x -= radius;
+	p.xy = mul(r2(inWarp + a * rot), p.xy);
+
+	return abs(p);
+}
+
+float3 opPolarTwistRep(float3 p, float radius, float rot, float reps)
+{
+	float a = atan2(p.z, p.x);
+	float ia = floor(reps*a / 6.2831853);
+	ia = (ia + .5) / reps * 6.2831853;
+	p.xz = mul(r2(ia), p.xz);
+	p.x -= radius;
+	p.xy = mul(r2(a * rot), p.xy);
+
+	return abs(p);
+}
+
+float3 pointWarp(float angle, float inWarp, float reps, float radius)
+{
+	float3 roter = normalize(float3(cos(angle), 0, sin(angle)));
+	float3 pointer = float3(0, 1, 0);
+	float3 cp = cross(roter, pointer);
+	pointer = mul(rot(cp, inWarp + angle * reps), pointer);
+	return (pointer + roter * radius);
+}
+
+float3 pWarp;
+
+float map(float3 p)
+{
+	float angle = _Time;
+	float inWarp = _Time / 5.0;
+
+	float s = sdSphere(p - pWarp, .5);
+
+	p = opPolarTwist(p, 2.5, inWarp, kk);
+	float m = sdBox2D(p.xy, .5);
+
+	return min(s, m);
+}
+
+float3 calcNormal(in float3 pos)
+{
+	float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize(
+		e.xyy*map(pos + e.xyy) +
+		e.yyx*map(pos + e.yyx) +
+		e.yxy*map(pos + e.yxy) +
+		e.xxx*map(pos + e.xxx));
+}
+
+float shadow(float3 ror, float3 rdr, float mint, float maxt)
+{
+	float h = 0;
+	float t = mint;
+	do
+	{
+		h = map(ror + rdr * t);
+		t += h;
+	} while (h > .001 && t < maxt);
+	return (h < .001) ? 0 : 1;
+}
+
+bool raymarchW(out float3 pos)
+{
+	float t = 0;
+	float d = 0;
+	float3 p = 0;
+	int i = 0;
+	do
+	{
+		p = ro + rd * t;
+		d = map(p);
+		t += d * .9;
+		epSI *= 1.0 + .01 * t;
+	} while (i++ < maxSteps && t < drawDist && d > epSI);
+
+	pos = p;
+	return (t < drawDist);
+}
+
+float shade(float3 p, float3 n)
+{
+	float ret = 1;
+
+	float doter = dot(-_LightDir.xyz, n);
+	ret = doter * .5 + .5;
+	ret += (1 - ret) * _L;
+	float s = shadow(p - _LightDir * .001 + n * .01, -_LightDir, .001, 75.0);
+
+	s = (doter <= 0 || s < .5) ? lerp(1, .85, abs(doter)) : 1;
+	ret *= s;
+
+	/*float3 ner = normalize(reflect(rd, n));
+	ret += saturate(dot(ner, -_LightDir) * .5 + .5) / 10 * s;
+	if(s >= 1)	ret = saturate(dot(ner, -_LightDir) * .5 + .5);
+	else		ret = 0;*/
+
+	return ret;
+}
+
+float ao(float3 p, float3 n) {
+	const int steps = 5;
+	float maxD = 0.7;
+	float occlusion = 0.0;
+	for (int i = 1; i <= steps; i++) {
+		float k = float(i) / float(steps);
+		k *= k;
+		float t = maxD * k;
+		float d = map(p + t * n);
+		occlusion += pow(0.5, k * float(steps)) * (t - d);
+	}
+	float scale = 0.4;
+	return 1.0 - saturate(scale * occlusion);
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	_Time = 0;
+	pixel = id.xy;
+
+	uv = float2((float)id.x / texSize, (float)id.y / texSize);
+	float2 screen = (uv - .5) * projectionMult;
+
+	ro = (right * screen.x + up * screen.y) + eye + fw * fwMult;
+	rd = normalize(ro - eye);
+
+	float3 temp = 0;
+
+	float3 pos = 0;
+	if (raymarchW(pos))
+	{
+		float3 nor = calcNormal(pos);
+		temp = shade(pos, nor) * ao(pos, nor);
+	}
+
+	//temp = pow(temp, 1. / 2.2);
+	Result[id.xy] = float4(temp, 1);
+}
+
