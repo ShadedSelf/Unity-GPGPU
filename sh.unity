@@ -38,7 +38,7 @@ RenderSettings:
   m_ReflectionIntensity: 1
   m_CustomReflection: {fileID: 0}
   m_Sun: {fileID: 0}
-  m_IndirectSpecularColor: {r: 0.18028353, g: 0.2257137, b: 0.30692255, a: 1}
+  m_IndirectSpecularColor: {r: 0.44657856, g: 0.49641234, b: 0.57481724, a: 1}
 --- !u!157 &3
 LightmapSettings:
   m_ObjectHideFlags: 0
@@ -140,25 +140,26 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f5ba88dbb67dc4cd6892f1b1b7796eb6, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  particleCount: 100000
-  iterations: 1
+  particleCount: 30000
+  iterations: 6
   radius: 0.1
-  particleCS: {fileID: 0}
-  sortCS: {fileID: 0}
-  instanceMesh: {fileID: 0}
-  instanceMaterial: {fileID: 0}
-  dTMult: 3
-  maxVelocity: 0.5
-  gridSize: 5
-  worldSize: {x: 0, y: 0, z: 0}
-  gravity: {x: 0, y: 0, z: 0}
+  particleCS: {fileID: 7200000, guid: 79d50399b97544030afd8cd7de32a8a1, type: 3}
+  sortCS: {fileID: 7200000, guid: b9742c21feb2141559d306d964c4bb16, type: 3}
+  instanceMesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+  instanceMaterial: {fileID: 2100000, guid: fcf6d9bb3840d40d9b00ab8869a4ebff, type: 2}
+  dTMult: 1.5
+  maxVelocity: 4
+  gridSize: 50
+  worldSize: {x: 5, y: 5, z: 5}
+  gravity: {x: 0, y: -2, z: 0}
   rad: 0.3
   lambad: 1
-  rest: 100
+  rest: 50
   mK: 0.001
   mQ: 0.1
   mE: 4
-  cubes: []
+  cubes:
+  - {fileID: 714102055}
 --- !u!4 &45165096
 Transform:
   m_ObjectHideFlags: 0
