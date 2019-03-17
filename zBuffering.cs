@@ -261,6 +261,7 @@ public class zBuffering : MonoBehaviour
 		neisBuffer.Release();
         p.Release();
         pos.Release();
+		tmp.Release();
 	}
 
 	void OnDrawGizmos()
