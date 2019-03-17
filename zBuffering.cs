@@ -33,7 +33,7 @@ public class zBuffering : MonoBehaviour
 	[Header("Colliders")]
 	public GameObject[] cubes;
 
-	ComputeBuffer collisionBuffer, gridBuffer, argsBuffer, cubesBuffer, neisBuffer, pos, p;
+	ComputeBuffer collisionBuffer, gridBuffer, argsBuffer, cubesBuffer, neisBuffer, pos, p, tmp;
 	CommandBuffer commandBuffer;
 	uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
 	int particleKernel, sortKernel, limitKernel, clearKernel, collisionKernel, findKernel, lambKernel;
@@ -71,20 +71,14 @@ public class zBuffering : MonoBehaviour
 		//gridSize = (int)(worldSize.x / radius);
 
 		particleCount = Mathf.ClosestPowerOfTwo(particleCount);
-		// particleKernel = particleCS.FindKernel("Particler");
-		particleKernel = 0;
-		// limitKernel = particleCS.FindKernel("TrueLimits");
-		limitKernel = 1;
-		// clearKernel = particleCS.FindKernel("Clear");
-		clearKernel = 2;
-		// collisionKernel = particleCS.FindKernel("Collision");
-		collisionKernel = 3;
-		// findKernel = particleCS.FindKernel("Find");
-		findKernel = 4;
+		particleKernel = particleCS.FindKernel("Particler");
+		limitKernel = particleCS.FindKernel("TrueLimits");
+		clearKernel = particleCS.FindKernel("Clear");
+		collisionKernel = particleCS.FindKernel("Collision");
+		findKernel = particleCS.FindKernel("Find");
 		// lambKernel = particleCS.FindKernel("Lamb");
 		lambad = 5;
-		// sortKernel = sortCS.FindKernel("Sort");
-		sortKernel = 0;
+		sortKernel = sortCS.FindKernel("Sort");
 
 		CreateBuffers();
 
@@ -155,10 +149,6 @@ public class zBuffering : MonoBehaviour
 
 		sorter.SetSortBuffer(commandBuffer);
 
-        /*commandBuffer.BeginSample("Test");
-        commandBuffer.DispatchCompute(particleCS, 6, particleCount / 32, 1, 1);
-        commandBuffer.EndSample("Test");*/
-
         commandBuffer.BeginSample("Limit");
 		commandBuffer.DispatchCompute(particleCS, limitKernel, particleCount / 32, 1, 1);
 		commandBuffer.EndSample("Limit");
@@ -176,6 +166,10 @@ public class zBuffering : MonoBehaviour
 			commandBuffer.BeginSample("Collision");
 			commandBuffer.DispatchCompute(particleCS, collisionKernel, particleCount / 32, 1, 1);
 			commandBuffer.EndSample("Collision");
+
+			commandBuffer.BeginSample("Test");
+        	commandBuffer.DispatchCompute(particleCS, 6, particleCount / 32, 1, 1);
+        	commandBuffer.EndSample("Test");
 		}
 
 		commandBuffer.BeginSample("Clear");
@@ -194,10 +188,9 @@ public class zBuffering : MonoBehaviour
         pos = new ComputeBuffer(particleCount, sizeof(float) * 4);
         Vector4[] particles = new Vector4[particleCount];
         for (int i = 0; i < particleCount; i++)
-        {
-            particles[i] = particles[i] = Random.insideUnitSphere * worldSize.x;
-            //particles[i].vel = Vector4.zero;
-        }
+
+            particles[i] = Random.insideUnitSphere * worldSize.x;
+
         pos.SetData(particles);
         particleCS.SetBuffer(particleKernel, "pos", pos);
         particleCS.SetBuffer(6, "pos", pos);
@@ -211,6 +204,15 @@ public class zBuffering : MonoBehaviour
         particleCS.SetBuffer(lambKernel, "p", p);
         particleCS.SetBuffer(6, "p", p);
         instanceMaterial.SetBuffer("p", p);
+
+        tmp = new ComputeBuffer(particleCount, sizeof(float) * 4);
+        tmp.SetData(particles);
+        particleCS.SetBuffer(particleKernel, "tmp", tmp);
+        particleCS.SetBuffer(collisionKernel, "tmp", tmp);
+        particleCS.SetBuffer(findKernel, "tmp", tmp);
+        particleCS.SetBuffer(lambKernel, "tmp", tmp);
+        particleCS.SetBuffer(6, "tmp", tmp);
+        instanceMaterial.SetBuffer("tmp", tmp);
 
 
 

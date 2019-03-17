@@ -10,6 +10,7 @@
 
 RWStructuredBuffer<float4> pos;
 RWStructuredBuffer<float4> p;
+RWStructuredBuffer<float4> tmp;
 RWStructuredBuffer<CollisionData> collisionBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
 RWStructuredBuffer<Nei> neisBuffer;
@@ -72,8 +73,8 @@ float3 calcNormal(in float3 pos)
 void Particler (uint3 id : SV_DispatchThreadID)
 {
 	float3 vel = (p[id.x].xyz - pos[id.x].xyz) / deltaTime;
-	vel += gravity * deltaTime;
-	// vel += -calcNormalG(p[id.x].xyz) * deltaTime;
+	// vel += gravity * deltaTime;
+	vel += -calcNormalG(p[id.x].xyz) * deltaTime;
 	vel *= (length(vel) > maxVelocity) ? maxVelocity / pow(length(vel), 2) : .995;
 
 	pos[id.x].xyz = p[id.x].xyz;
@@ -128,14 +129,17 @@ void Collision(uint3 id : SV_DispatchThreadID)
 	{
 		ot = p[neisBuffer[id.x].neis[i]];
 		float tmp = pow(W(me.xyz - ot.xyz, particleRad) / W(particleRad * mQ, particleRad), mE); //hmm nan
-		float co = -mK * ((isnan(tmp)) ? 0.0000 : tmp); //hm
+		float co = -mK * ((isnan(tmp)) ? 0.0 : tmp); //hm
 		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad);
+
+		// if (distance(me.xyz, ot.xyz) < particleRad)
+			// dp += (me.xyz - ot.xyz) * (1.0 - distance(me.xyz, ot.xyz) / particleRad);
 	}
 
 	dp /= rest;
 	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0);
 
-	p[id.x].xyz += dp;
+	tmp[id.x].xyz = p[id.x].xyz + dp;
 }
 
 [numthreads(32, 1, 1)]
@@ -193,6 +197,7 @@ void Clear(uint3 id : SV_DispatchThreadID)
 [numthreads(32, 1, 1)]
 void Test(uint3 id : SV_DispatchThreadID)
 {
+	p[id.x] = tmp[id.x];
 	//p[id.x] = p[collisionBuffer[id.x].particleID];
 	//pos[id.x] = pos[collisionBuffer[id.x].particleID];
 }
