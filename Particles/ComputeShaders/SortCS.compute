@@ -1,7 +1,8 @@
-﻿#define GROUP_SIZE 512
+﻿#pragma kernel Sort
+
+#define GROUP_SIZE 512
 #define MAX_DIM_GROUPS 1024
 #define MAX_DIM_THREADS (GROUP_SIZE * MAX_DIM_GROUPS)
-#pragma kernel Sort
 
 #include "ComputeThings.cginc"
 
@@ -23,10 +24,9 @@ void Sort(uint3 id : SV_DispatchThreadID)
 	CollisionData tmpi = collisionBuffer[i];
 	CollisionData tmpj = collisionBuffer[j];
 
-	int diff = (tmpi.cell - tmpj.cell) * ((i&dim) == 0 ? 1 : -1);
+	int diff = (tmpi.cell - tmpj.cell) * ((i & dim) == 0 ? 1 : -1);
 	if (diff > 0)
 	{
-		
 		collisionBuffer[i] = tmpj;
 		collisionBuffer[j] = tmpi;
 	}

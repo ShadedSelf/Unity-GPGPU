@@ -3,9 +3,39 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
+struct Particle
+{
+	public Vector4 pos;
+	public Vector4 p;
+}
+
+struct CollisionData
+{
+	public uint cell;
+	public uint particleID;
+}
+
+struct Grid
+{
+	public uint start;
+	public uint end;
+}
+
+struct Cubes
+{
+	public Vector4 position;
+	public Vector4 scale;
+	public Vector4 velocity;
+}
+
+struct Nei
+{
+	public uint num;
+	public uint[] neis;
+}
+
 public class zBuffering : MonoBehaviour
 {
-
 	[Header("^^")]
 	public int particleCount = 100000;
 	public int iterations = 1;
@@ -33,60 +63,30 @@ public class zBuffering : MonoBehaviour
 	[Header("Colliders")]
 	public GameObject[] cubes;
 
-	ComputeBuffer collisionBuffer, gridBuffer, argsBuffer, cubesBuffer, neisBuffer, pos, p, tmp;
+	ComputeBuffer collisionBuffer, gridBuffer, argsBuffer, cubesBuffer, neisBuffer, pos, p, tmp, swapBuffer;
 	CommandBuffer commandBuffer;
-	uint[] args = new uint[5] { 0, 0, 0, 0, 0 };
-	int particleKernel, sortKernel, limitKernel, clearKernel, collisionKernel, findKernel, lambKernel;
-	Sort sorter;
-
-    [System.Serializable]
-    private struct CollisionData
-	{
-		public uint cell;
-		public uint particleID;
-	}
-
-    [System.Serializable]
-    public struct Grid
-	{
-		public uint start;
-		public uint end;
-	}
-
-	private struct Cubes
-	{
-		public Vector3 position;
-		public Vector3 scale;
-		public Vector3 velocity;
-	}
-
-	public struct Nei
-	{
-		public uint num;
-		public uint[] neis;
-	}
+	int particleKernel, sortKernel, limitKernel, clearKernel, collisionKernel, findKernel, lambKernel, swapKernel, tmpKernel;
+	Sorter sorter;
 
     void OnEnable()
 	{
+		// ((input / x) + 1) * x;
 		//gridSize = (int)(worldSize.x / radius);
-
 		particleCount = Mathf.ClosestPowerOfTwo(particleCount);
+
 		particleKernel = particleCS.FindKernel("Particler");
 		limitKernel = particleCS.FindKernel("TrueLimits");
 		clearKernel = particleCS.FindKernel("Clear");
 		collisionKernel = particleCS.FindKernel("Collision");
 		findKernel = particleCS.FindKernel("Find");
-		// lambKernel = particleCS.FindKernel("Lamb");
-		lambad = 5;
-		sortKernel = sortCS.FindKernel("Sort");
+		lambKernel = particleCS.FindKernel("Lamb");
+		swapKernel = particleCS.FindKernel("Swap");
+		tmpKernel = particleCS.FindKernel("Tmp");
 
+		sorter = new Sorter(particleCount);
+		sortKernel = sorter.sortKernel;
 		CreateBuffers();
-
-		sorter = new Sort();
-		sorter.compute = sortCS;
-		sorter.count = particleCount;
-		sorter.Set();
-
+		BindBuffers();
 		SetCommands();
 	}
 
@@ -94,7 +94,7 @@ public class zBuffering : MonoBehaviour
 	Vector3 lastPos;
 	void Update()
 	{
-		particleCS.SetFloat("deltaTime", Time.deltaTime * dTMult / (float)iterations);
+		particleCS.SetFloat("deltaTime", Time.deltaTime * dTMult) /*/ (float)iterations)*/;
 		particleCS.SetFloat("time", Time.time);
 		particleCS.SetFloat("particleRad", rad);
 		particleCS.SetFloat("rest", rest);
@@ -105,7 +105,8 @@ public class zBuffering : MonoBehaviour
 		particleCS.SetFloat("mK", mK);
 		particleCS.SetFloat("mE", mE);
 
-		particleCS.SetInt("gridSize", Mathf.Abs(gridSize));
+		particleCS.SetInt("iterations", iterations);
+		// particleCS.SetInt("gridSize", Mathf.Abs(gridSize));
 		particleCS.SetInt("particleCount", particleCount);
         particleCS.SetInts("gridSize", new int[3] { gridSize, gridSize, gridSize });
 
@@ -149,6 +150,10 @@ public class zBuffering : MonoBehaviour
 
 		sorter.SetSortBuffer(commandBuffer);
 
+		commandBuffer.BeginSample("Swap");
+        commandBuffer.DispatchCompute(particleCS, swapKernel, particleCount / 32, 1, 1);
+        commandBuffer.EndSample("Swap");
+
         commandBuffer.BeginSample("Limit");
 		commandBuffer.DispatchCompute(particleCS, limitKernel, particleCount / 32, 1, 1);
 		commandBuffer.EndSample("Limit");
@@ -167,89 +172,86 @@ public class zBuffering : MonoBehaviour
 			commandBuffer.DispatchCompute(particleCS, collisionKernel, particleCount / 32, 1, 1);
 			commandBuffer.EndSample("Collision");
 
-			commandBuffer.BeginSample("Test");
-        	commandBuffer.DispatchCompute(particleCS, 6, particleCount / 32, 1, 1);
-        	commandBuffer.EndSample("Test");
+			commandBuffer.BeginSample("Tmp");
+        	commandBuffer.DispatchCompute(particleCS, tmpKernel, particleCount / 32, 1, 1);
+        	commandBuffer.EndSample("Tmp");
 		}
 
 		commandBuffer.BeginSample("Clear");
-		commandBuffer.DispatchCompute(particleCS, clearKernel, Mathf.NextPowerOfTwo(gridSize * gridSize * gridSize) / 128, 1, 1);
+		commandBuffer.DispatchCompute(particleCS, clearKernel, Mathf.NextPowerOfTwo(gridSize * gridSize * gridSize) / 32, 1, 1);
 		commandBuffer.EndSample("Clear");
 	}
 
 	void CreateBuffers()
 	{
-		argsBuffer = new ComputeBuffer(1, args.Length * sizeof(uint), ComputeBufferType.IndirectArguments);
-		uint numIndices = instanceMesh.GetIndexCount(0);
-		args[0] = numIndices;
-		args[1] = (uint)particleCount;
-		argsBuffer.SetData(args);
+		tmp				= new ComputeBuffer(particleCount, sizeof(float) * 4);
+        pos				= new ComputeBuffer(particleCount, sizeof(float) * 4);
+		p				= new ComputeBuffer(particleCount, sizeof(float) * 4);
+		swapBuffer		= new ComputeBuffer(particleCount, sizeof(float) * 4 * 2);
+		collisionBuffer = new ComputeBuffer(particleCount, sizeof(uint)  * 2);
+		neisBuffer		= new ComputeBuffer(particleCount, sizeof(uint)  * 101);
+		gridBuffer		= new ComputeBuffer(Mathf.NextPowerOfTwo(gridSize * gridSize * gridSize), sizeof(uint) * 2);
+		argsBuffer		= new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
 
-        pos = new ComputeBuffer(particleCount, sizeof(float) * 4);
-        Vector4[] particles = new Vector4[particleCount];
+		Vector4[] particles = new Vector4[particleCount];
         for (int i = 0; i < particleCount; i++)
-
             particles[i] = Random.insideUnitSphere * worldSize.x;
+		pos.SetData(particles);
+		p.SetData(particles);
 
-        pos.SetData(particles);
-        particleCS.SetBuffer(particleKernel, "pos", pos);
-        particleCS.SetBuffer(6, "pos", pos);
-        instanceMaterial.SetBuffer("pos", pos);
-
-        p = new ComputeBuffer(particleCount, sizeof(float) * 4);
-        p.SetData(particles);
-        particleCS.SetBuffer(particleKernel, "p", p);
-        particleCS.SetBuffer(collisionKernel, "p", p);
-        particleCS.SetBuffer(findKernel, "p", p);
-        particleCS.SetBuffer(lambKernel, "p", p);
-        particleCS.SetBuffer(6, "p", p);
-        instanceMaterial.SetBuffer("p", p);
-
-        tmp = new ComputeBuffer(particleCount, sizeof(float) * 4);
-        tmp.SetData(particles);
-        particleCS.SetBuffer(particleKernel, "tmp", tmp);
-        particleCS.SetBuffer(collisionKernel, "tmp", tmp);
-        particleCS.SetBuffer(findKernel, "tmp", tmp);
-        particleCS.SetBuffer(lambKernel, "tmp", tmp);
-        particleCS.SetBuffer(6, "tmp", tmp);
-        instanceMaterial.SetBuffer("tmp", tmp);
-
-
-
-
-
-        collisionBuffer = new ComputeBuffer(particleCount, sizeof(uint) * 2);
-		CollisionData[] colls = new CollisionData[particleCount];
-		for (int i = 0; i < particleCount; i++)
-			colls[i].particleID = (uint)i;
-		collisionBuffer.SetData(colls);
-		particleCS.SetBuffer(particleKernel, "collisionBuffer", collisionBuffer);
-		particleCS.SetBuffer(limitKernel, "collisionBuffer", collisionBuffer);
-		particleCS.SetBuffer(collisionKernel, "collisionBuffer", collisionBuffer);
-		particleCS.SetBuffer(findKernel, "collisionBuffer", collisionBuffer);
-        particleCS.SetBuffer(6, "collisionBuffer", collisionBuffer);
-        particleCS.SetBuffer(6, "collisionBuffer", collisionBuffer);
-        sortCS.SetBuffer(sortKernel, "collisionBuffer", collisionBuffer);
-
-		gridBuffer = new ComputeBuffer(Mathf.NextPowerOfTwo(gridSize * gridSize * gridSize), sizeof(uint) * 2);
-		particleCS.SetBuffer(collisionKernel, "gridBuffer", gridBuffer);
-		particleCS.SetBuffer(limitKernel, "gridBuffer", gridBuffer);
-		particleCS.SetBuffer(clearKernel, "gridBuffer", gridBuffer);
-		particleCS.SetBuffer(findKernel, "gridBuffer", gridBuffer);
-
-		neisBuffer = new ComputeBuffer(particleCount, sizeof(uint) * 51);
-		particleCS.SetBuffer(findKernel, "neisBuffer", neisBuffer);
-		particleCS.SetBuffer(collisionKernel, "neisBuffer", neisBuffer);
-		particleCS.SetBuffer(lambKernel, "neisBuffer", neisBuffer);
-		particleCS.SetBuffer(particleKernel, "neisBuffer", neisBuffer);
+		uint numIndices = instanceMesh.GetIndexCount(0);
+		uint[] args = new uint[5] { numIndices, (uint)particleCount, 0, 0, 0 };
+		argsBuffer.SetData(args);
 
         if (cubes.Length > 0)
 		{
-			cubesBuffer = new ComputeBuffer(cubes.Length, sizeof(float) * 3 * 3);
+			cubesBuffer = new ComputeBuffer(cubes.Length, sizeof(float) * 4 * 3);
 			particleCS.SetBuffer(collisionKernel, "cubes", cubesBuffer);
 			particleCS.SetInt("cubeCount", cubes.Length);
 			cubesTemp = new Vector3[cubes.Length];
 		}
+	}
+
+	void BindBuffers()
+	{
+		particleCS.SetBuffer(particleKernel, "swapBuffer", swapBuffer);
+		particleCS.SetBuffer(particleKernel, "pos", pos);
+		particleCS.SetBuffer(particleKernel, "p", p);		
+		particleCS.SetBuffer(particleKernel, "collisionBuffer", collisionBuffer);		
+		particleCS.SetBuffer(particleKernel, "neisBuffer", neisBuffer);		
+		
+		particleCS.SetBuffer(limitKernel, "collisionBuffer", collisionBuffer);
+		particleCS.SetBuffer(limitKernel, "gridBuffer", gridBuffer);		
+		
+		particleCS.SetBuffer(collisionKernel, "p", p);
+		particleCS.SetBuffer(collisionKernel, "collisionBuffer", collisionBuffer);
+		particleCS.SetBuffer(collisionKernel, "gridBuffer", gridBuffer);
+		particleCS.SetBuffer(collisionKernel, "neisBuffer", neisBuffer);
+		particleCS.SetBuffer(collisionKernel, "tmp", tmp);
+
+		particleCS.SetBuffer(findKernel, "p", p);
+		particleCS.SetBuffer(findKernel, "collisionBuffer", collisionBuffer);
+		particleCS.SetBuffer(findKernel, "gridBuffer", gridBuffer);
+		particleCS.SetBuffer(findKernel, "neisBuffer", neisBuffer);
+
+		particleCS.SetBuffer(lambKernel, "p", p);
+		particleCS.SetBuffer(lambKernel, "neisBuffer", neisBuffer);
+		
+		particleCS.SetBuffer(swapKernel, "swapBuffer", swapBuffer);
+        particleCS.SetBuffer(swapKernel, "pos", pos);
+        particleCS.SetBuffer(swapKernel, "p", p);
+        particleCS.SetBuffer(swapKernel, "collisionBuffer", collisionBuffer);
+        particleCS.SetBuffer(swapKernel, "collisionBuffer", collisionBuffer);
+
+        particleCS.SetBuffer(tmpKernel, "p", p);
+        particleCS.SetBuffer(tmpKernel, "tmp", tmp);
+
+		particleCS.SetBuffer(clearKernel, "gridBuffer", gridBuffer);
+
+		sortCS.SetBuffer(sortKernel, "collisionBuffer", collisionBuffer);
+
+        instanceMaterial.SetBuffer("pos", pos);    
+        instanceMaterial.SetBuffer("p", p);
 	}
 
 	void OnDisable()
@@ -259,6 +261,7 @@ public class zBuffering : MonoBehaviour
 		argsBuffer.Release();
 		cubesBuffer.Release();
 		neisBuffer.Release();
+		swapBuffer.Release();
         p.Release();
         pos.Release();
 		tmp.Release();

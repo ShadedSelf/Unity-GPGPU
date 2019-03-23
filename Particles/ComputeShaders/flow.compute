@@ -4,13 +4,15 @@
 #pragma kernel Collision
 #pragma kernel Find
 #pragma kernel Lamb
-#pragma kernel Test
+#pragma kernel Swap
+#pragma kernel Tmp
 
 #include "ComputeThings.cginc"
 
 RWStructuredBuffer<float4> pos;
 RWStructuredBuffer<float4> p;
 RWStructuredBuffer<float4> tmp;
+RWStructuredBuffer<Particle> swapBuffer;
 RWStructuredBuffer<CollisionData> collisionBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
 RWStructuredBuffer<Nei> neisBuffer;
@@ -30,6 +32,7 @@ float mE;
 
 int particleCount;
 int cubeCount;
+int iterations;
 
 float3 ext;
 float3 gravity;
@@ -56,7 +59,7 @@ float3 calcNormalG(in float3 pos)
 
 float map(float3 p)
 {
-	return max(sdBox(p, worldSize), -sdBox(mul((float3x3)rot, p - cubes[0].position), cubes[0].scale + radius));
+	return max(sdBox(p, worldSize), -sdBox(mul((float3x3)rot, p - cubes[0].position.xyz), cubes[0].scale.xyz + radius));
 }
 
 float3 calcNormal(in float3 pos)
@@ -73,17 +76,32 @@ float3 calcNormal(in float3 pos)
 void Particler (uint3 id : SV_DispatchThreadID)
 {
 	float3 vel = (p[id.x].xyz - pos[id.x].xyz) / deltaTime;
-	// vel += gravity * deltaTime;
-	vel += -calcNormalG(p[id.x].xyz) * deltaTime;
+	vel += gravity * deltaTime;
+	// vel += -calcNormalG(p[id.x].xyz) * deltaTime * length(gravity);
 	vel *= (length(vel) > maxVelocity) ? maxVelocity / pow(length(vel), 2) : .995;
+	// vel /= 1 + length(vel) * 0.005;
 
 	pos[id.x].xyz = p[id.x].xyz;
 	p[id.x].xyz = pos[id.x].xyz + vel * deltaTime;
 
 	float3 aOne = normalizeFloat3(p[id.x].xyz, -worldSize, worldSize);
 	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
-	//int3 gridTemp = floor(clamp(aOne * worldSize * 2 / .2, 0, round(worldSize * 2 / .2) - 1));
 
+	collisionBuffer[id.x].cell = fromGridToIndex((uint3)gridTemp, gridSize);
+	collisionBuffer[id.x].particleID = id.x;
+
+	swapBuffer[id.x].pos = pos[id.x];
+	swapBuffer[id.x].p = p[id.x];
+}
+
+[numthreads(32, 1, 1)]
+void Swap(uint3 id : SV_DispatchThreadID)
+{
+	pos[id.x] = swapBuffer[collisionBuffer[id.x].particleID].pos;
+	p[id.x] = swapBuffer[collisionBuffer[id.x].particleID].p;
+	
+	float3 aOne = normalizeFloat3(p[id.x].xyz, -worldSize, worldSize);
+	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
 	collisionBuffer[id.x].cell = fromGridToIndex((uint3)gridTemp, gridSize);
 	collisionBuffer[id.x].particleID = id.x;
 }
@@ -133,15 +151,19 @@ void Collision(uint3 id : SV_DispatchThreadID)
 		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad);
 
 		// if (distance(me.xyz, ot.xyz) < particleRad)
-			// dp += (me.xyz - ot.xyz) * (1.0 - distance(me.xyz, ot.xyz) / particleRad);
+		// 	dp += (me.xyz - ot.xyz) * (1.0 - distance(me.xyz, ot.xyz) / particleRad);
 	}
 
 	dp /= rest;
-	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0);
+	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0) / iterations;
+
+	// p[id.x].xyz += dp;
 
 	tmp[id.x].xyz = p[id.x].xyz + dp;
 }
 
+// TODO: Once per cell, instead of particle, duh
+// TODO: Try all this in spherical coordinates
 [numthreads(32, 1, 1)]
 void Find(uint3 id : SV_DispatchThreadID)
 {
@@ -163,7 +185,7 @@ void Find(uint3 id : SV_DispatchThreadID)
 
 			for (uint i = gridBuffer[cell].start; i < gridBuffer[cell].end; ++i)
 			{
-				if (num > 49) break;
+				if (num > 99) break;
 				uint pID = collisionBuffer[i].particleID;
 				if (distance(me, p[pID].xyz) < particleRad && id.x != pID)
 				{
@@ -187,7 +209,7 @@ void TrueLimits(uint3 id : SV_DispatchThreadID)
 		gridBuffer[cell].end = id.x + 1;
 }
 
-[numthreads(128, 1, 1)]
+[numthreads(32, 1, 1)]
 void Clear(uint3 id : SV_DispatchThreadID)
 {
 	gridBuffer[id.x].start = 0;
@@ -195,9 +217,7 @@ void Clear(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(32, 1, 1)]
-void Test(uint3 id : SV_DispatchThreadID)
+void Tmp(uint3 id : SV_DispatchThreadID)
 {
 	p[id.x] = tmp[id.x];
-	//p[id.x] = p[collisionBuffer[id.x].particleID];
-	//pos[id.x] = pos[collisionBuffer[id.x].particleID];
 }

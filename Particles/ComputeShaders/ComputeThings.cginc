@@ -21,15 +21,15 @@ struct Grid
 
 struct Cubes
 {
-	float3 position;
-	float3 scale;
-	float3 velocity;
+	float4 position;
+	float4 scale;
+	float4 velocity;
 };
 
 struct Nei
 {
 	uint num;
-	uint neis[50];
+	uint neis[100];
 };
 
 
@@ -51,12 +51,12 @@ inline float3 normalizeFloat3(float3 value, float3 min, float3 max)
 inline uint fromGridToIndex(uint3 grid, int3 gridSize)
 {
 	return grid.x + (grid.y * gridSize.x) + (grid.z * gridSize.x * gridSize.y);
-	/*const uint p1 = 73856093;
-	const uint p2 = 19349663;
-	const uint p3 = 83492791;
-	uint n = p1 * grid.x ^ p2*grid.y ^ p3*grid.z; //resolutino
-	n %= (gridSize.x * gridSize.x * gridSize.x);
-	return n;*/
+	// const uint p1 = 73856093;
+	// const uint p2 = 19349663;
+	// const uint p3 = 83492791;
+	// uint n = p1 * grid.x ^ p2*grid.y ^ p3*grid.z; //resolutino
+	// n %= (gridSize.x * gridSize.x * gridSize.x);
+	// return n;
 }
 
 inline uint3 fromIndexToGrid(uint binID, uint3 num) 
