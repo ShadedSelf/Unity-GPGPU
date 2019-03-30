@@ -23,7 +23,7 @@ struct Cubes
 {
 	float4 position;
 	float4 scale;
-	float4 velocity;
+	float4x4 rot;
 };
 
 struct Nei
@@ -38,17 +38,17 @@ struct Nei
 	//float3 wge = (float3)id.x / (float3)particleCount;
 
 
-inline float normalizeFloat(float value, float min, float max)
+float normalizeFloat(float value, float min, float max)
 {
 	return (value - min) / (max - min);
 }
 
-inline float3 normalizeFloat3(float3 value, float3 min, float3 max)
+float3 normalizeFloat3(float3 value, float3 min, float3 max)
 {
 	return (value - min) / (max - min);
 }
 
-inline uint fromGridToIndex(uint3 grid, int3 gridSize)
+uint fromGridToIndex(uint3 grid, int3 gridSize)
 {
 	return grid.x + (grid.y * gridSize.x) + (grid.z * gridSize.x * gridSize.y);
 	// const uint p1 = 73856093;
@@ -59,7 +59,7 @@ inline uint fromGridToIndex(uint3 grid, int3 gridSize)
 	// return n;
 }
 
-inline uint3 fromIndexToGrid(uint binID, uint3 num) 
+uint3 fromIndexToGrid(uint binID, uint3 num) 
 {
 	uint3 binID3D;
 	binID3D.z = binID / (num.x * num.y);
@@ -68,14 +68,14 @@ inline uint3 fromIndexToGrid(uint binID, uint3 num)
 	return binID3D;
 }
 
-inline bool checkAABB(float3 aPos, float3 aScale, float3 bPos, float3 bScale)
+bool checkAABB(float3 aPos, float3 aScale, float3 bPos, float3 bScale)
 {
 	return ((aPos.x - aScale.x <= bPos.x + bScale.x && aPos.x + aScale.x >= bPos.x - bScale.x) && 
 			(aPos.y - aScale.y <= bPos.y + bScale.y && aPos.y + aScale.y >= bPos.y - bScale.y) && 
 			(aPos.z - aScale.z <= bPos.z + bScale.z && aPos.z + aScale.z >= bPos.z - bScale.z));
 }
 
-inline float4x4 rotationVectorToMatrix(float3 rot)
+float4x4 rotationVectorToMatrix(float3 rot)
 {
 	float sir = sin(rot.z);
 	float sor = cos(rot.z);
@@ -105,31 +105,14 @@ inline float4x4 rotationVectorToMatrix(float3 rot)
 	return mul(mul(zRot, yRot), xRot);
 }
 
-inline float rand(float p)
-{
-	return frac(sin(p) * 43758.5453);
-}
-
-inline float2 rand(float2 p)
-{
-	p = float2(dot(p, float2(127.1, 311.7)), dot(p, float2(269.5, 183.3)));
-	return frac(sin(p) * 43758.5453);
-}
-
-inline float3 rand(float3 p)
-{
-	p = float3(dot(p, float3(127.1, 311.7, 475.6)), dot(p, float3(269.5, 676.5, 475.6)), dot(p, float3(318.5, 183.3, 713.4)));
-	return frac(sin(p) * 43758.5453);
-}
-
-inline float W(float3 r, float h)
+float W(float3 r, float h)
 {
 	return (length(r) >= 0 && h >= length(r)) ?
 		(315 / (64 * PI * pow(h, 9))) * pow((pow(h, 2) - pow(length(r), 2)), 3) :
 		0;
 }
 
-inline float3 WS(float3 r, float h)
+float3 WS(float3 r, float h)
 {
 	return (length(r) > 0 && h >= length(r)) ?
 		-(45 / (PI * pow(h, 6))) * pow((h - length(r)), 2) * (r / length(r)) :

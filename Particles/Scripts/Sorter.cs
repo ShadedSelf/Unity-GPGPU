@@ -9,32 +9,34 @@ public class Sorter
 	const string DIM   = "dim";
 	const string COUNT = "count";
 
-	private ComputeShader computeShader;
-	private int count;
+	public ComputeShader shader;
 	public int sortKernel;
 
-	public Sorter(int count)
+	private int count;
+
+	public Sorter(int count, ComputeShader shader)
 	{
 		this.count = count;
-		computeShader = Finder.FindObject<ComputeShader>("SortCS");
-		sortKernel = computeShader.FindKernel("Sort");
+		this.shader = shader;
+		// shader = Finder.FindObject<ComputeShader>("SortCS");
+		sortKernel = shader.FindKernel("Sort");
 	}
 
-    public void SetSortBuffer(CommandBuffer commandBuffer)
+    public void SetCmdBuffer(CommandBuffer commandBuffer)
 	{
 		int x, y, z;
 		CalcNums(count, out x, out y, out z);
 
 		commandBuffer.BeginSample("Sorting");
 
-		computeShader.SetInt(COUNT, count);
+		shader.SetInt(COUNT, count);
         for (int dim = 2; dim <= count; dim <<= 1)
 		{
-			commandBuffer.SetComputeIntParam(computeShader, DIM, dim);
+			commandBuffer.SetComputeIntParam(shader, DIM, dim);
 			for (int block = dim >> 1; block > 0; block >>= 1)
 			{
-				commandBuffer.SetComputeIntParam(computeShader, BLOCK, block);
-				commandBuffer.DispatchCompute(computeShader, sortKernel, x, y, z);
+				commandBuffer.SetComputeIntParam(shader, BLOCK, block);
+				commandBuffer.DispatchCompute(shader, sortKernel, x, y, z);
 			}
 		}
 

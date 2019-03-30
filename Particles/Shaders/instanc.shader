@@ -23,7 +23,7 @@
 		float3 _Length;
 		float radius;
 
-		#include "ComputeThings.cginc"
+		// #include "ComputeThings.cginc"
 
         struct Input 
 		{
