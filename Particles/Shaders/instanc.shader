@@ -37,15 +37,17 @@
 		}	
 
     #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-        StructuredBuffer<float4> pos;
+        // StructuredBuffer<float4> pos;
 		StructuredBuffer<float4> p;
+		StructuredBuffer<float4> color;
     #endif
 
     void setup()
         {
         #ifdef UNITY_PROCEDURAL_INSTANCING_ENABLED
-            float3 data = pos[unity_InstanceID].xyz + _WorldPos;
-			_Color = (p[unity_InstanceID] - pos[unity_InstanceID]) / .25 * .5 + .5;
+            float3 data = p[unity_InstanceID].xyz + _WorldPos;
+			// _Color = (p[unity_InstanceID] - pos[unity_InstanceID]) / .25 * .5 + .5;
+			_Color = color[unity_InstanceID].xyz;
 
 			//_Color = particleBuffer[unity_InstanceID].vel.w;
 

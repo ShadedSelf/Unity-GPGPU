@@ -3,7 +3,7 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-public class ComputeSystem 
+public class ComputeSystem
 {
 	public ComputeShader shader;
 	private Dictionary<string, ComputeKernel> kernels = new Dictionary<string, ComputeKernel>();
@@ -14,6 +14,14 @@ public class ComputeSystem
 	{
 		this.shader = shader;
 		this.profile = profile;
+	}
+
+	public Dictionary<string, ComputeBuffer> Buffers
+	{
+		get
+		{
+			return buffers;
+		}
 	}
 
 	//-- Setup: --
@@ -36,44 +44,29 @@ public class ComputeSystem
 
 	public void SetBufferAtKernel(string bufferName, string kernelName)
 	{
-		ComputeKernel kernel;
-		if (kernels.TryGetValue(kernelName, out kernel))
-		{
-			ComputeBuffer buffer;
-			if (buffers.TryGetValue(bufferName, out buffer))
-				kernel.SetBuffer(buffer, bufferName);
-		}
+		kernels[kernelName].SetBuffer(buffers[bufferName], bufferName);
 	}
 
 	public void SetBufferData(string bufferName, System.Array data)
 	{
-		ComputeBuffer buffer;
-		if (buffers.TryGetValue(bufferName, out buffer))
-			buffer.SetData(data);
+		buffers[bufferName].SetData(data);
 	}
 
 	//-- Getup: --
 	public ComputeBuffer GetBuffer(string bufferName)
 	{
-		ComputeBuffer buffer;
-		if (buffers.TryGetValue(bufferName, out buffer))
-			return buffer;
-		return null;
+		return buffers[bufferName];
 	}
 
 	//-- Dispatch: --
 	public void Dispatch(string kernelName)
 	{
-		ComputeKernel kernel;
-		if (kernels.TryGetValue(kernelName, out kernel))
-			kernel.Dispacth();
+		kernels[kernelName].Dispacth();
 	}
 
 	public void RecordDispatch(string kernelName, CommandBuffer cmdBuf)
 	{
-			ComputeKernel kernel;
-		if (kernels.TryGetValue(kernelName, out kernel))
-			kernel.RecordDispatch(cmdBuf, profile);
+		kernels[kernelName].RecordDispatch(cmdBuf, profile);
 	}
 
 	//-- Cleanup: --

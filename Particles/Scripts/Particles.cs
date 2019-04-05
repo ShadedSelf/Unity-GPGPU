@@ -21,6 +21,8 @@ public class Particles : MonoBehaviour
 	public int particleCount = 100000;
 	public int iterations = 1;
 	public float radius = .1f;
+	public bool draw = true;
+	public bool compute = true;
 	[Header("World")]
 	[Range(1, 4)]
 	public float dTMult = 3;
@@ -61,35 +63,43 @@ public class Particles : MonoBehaviour
 		system.AddBuffer("p",				particleCount, sizeof(float) * 4);
 		system.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 2);
 		system.AddBuffer("collisionBuffer", particleCount, sizeof(uint) * 2);
-		system.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 101);
-		system.AddBuffer("gridBuffer",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 2);
+		system.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 65);
 		system.AddBuffer("cubes",			cubes.Length, sizeof(float) * 4 * 6);
+		system.AddBuffer("color",			particleCount, sizeof(float) * 4);
+		system.AddBuffer("gridBuffer",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 2);
+		system.AddBuffer("cellCount",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint));
+		system.AddBuffer("nIndices",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 64);
+		system.AddBuffer("bros",			NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 65);
+
 
 		system.AddKernel("Particler",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Swap",		new Vector3Int(particleCount, 1, 1));
-		system.AddKernel("TrueLimits",	new Vector3Int(particleCount, 1, 1));
+		// system.AddKernel("TrueLimits",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Find",		new Vector3Int(particleCount, 1, 1));
-		system.AddKernel("Lamb",		new Vector3Int(particleCount, 1, 1));
+		// system.AddKernel("Lamb",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Collision",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Tmp",			new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Clear",		new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
+		// system.AddKernel("Bro",			new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
 
 		system.SetAllBuffers();
-		material.SetBuffer("pos", system.GetBuffer("pos"));
-        material.SetBuffer("p", system.GetBuffer("p"));
+		material.SetBuffer("pos",	system.GetBuffer("pos"));
+        material.SetBuffer("p",		system.GetBuffer("p"));
+        material.SetBuffer("color", system.GetBuffer("color"));
 		sorter.shader.SetBuffer(sorter.sortKernel, "collisionBuffer", system.GetBuffer("collisionBuffer"));
 		
 		cmdBuff = new CommandBuffer();
 		cmdBuff.name = "Particle System";
 
 		system.RecordDispatch("Particler", cmdBuff);
-		sorter.SetCmdBuffer(cmdBuff);
+		// sorter.SetCmdBuffer(cmdBuff);
 		system.RecordDispatch("Swap", cmdBuff);
-		system.RecordDispatch("TrueLimits", cmdBuff);
+		// // system.RecordDispatch("TrueLimits", cmdBuff);
+		// system.RecordDispatch("Bro", cmdBuff);
 		system.RecordDispatch("Find", cmdBuff);
 		for (int i = 0; i < iterations; i++)
 		{
-			system.RecordDispatch("Lamb", cmdBuff);
+			// system.RecordDispatch("Lamb", cmdBuff);
 			system.RecordDispatch("Collision", cmdBuff);
 			system.RecordDispatch("Tmp", cmdBuff);
 		}
@@ -117,16 +127,13 @@ public class Particles : MonoBehaviour
 	private CubeData[] cubeData;
 	void DynamicBuffers()
 	{
-		if (cubes.Length > 0)
+		for (int i = 0; i < cubes.Length; i++)
 		{
-			for (int i = 0; i < cubes.Length; i++)
-			{
-				cubeData[i].pos = cubes[i].transform.position - transform.position;
-				cubeData[i].scale = cubes[i].transform.lossyScale / 2;
-				cubeData[i].rot = Matrix4x4.Rotate(cubes[i].transform.rotation).inverse;
-			}
-			system.SetBufferData("cubes", cubeData);
+			cubeData[i].pos = cubes[i].transform.position - transform.position;
+			cubeData[i].scale = cubes[i].transform.lossyScale / 2;
+			cubeData[i].rot = Matrix4x4.Rotate(cubes[i].transform.rotation).inverse;
 		}
+		system.SetBufferData("cubes", cubeData);
 	}
 	
 	void Update() 
@@ -155,14 +162,15 @@ public class Particles : MonoBehaviour
 
 		DynamicBuffers();
 
-		Graphics.ExecuteCommandBuffer(cmdBuff);
-		Graphics.DrawMeshInstancedIndirect(mesh, 0, material, new Bounds(Vector3.zero, Vector3.one * 10000), drawArgs);
+		if (compute) { Graphics.ExecuteCommandBuffer(cmdBuff); }
+		if (draw)	 { Graphics.DrawMeshInstancedIndirect(mesh, 0, material, new Bounds(Vector3.zero, Vector3.one * 100), drawArgs); }
 	}
 
 	void OnDisable()
 	{
 		system.Cleanup();
 		drawArgs.Release();
+		cmdBuff.Release();
 	}
 
 	void OnDrawGizmos()

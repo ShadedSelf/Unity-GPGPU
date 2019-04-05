@@ -6,16 +6,27 @@
 #pragma kernel Lamb
 #pragma kernel Swap
 #pragma kernel Tmp
+#pragma kernel Bro
 
 #include "ComputeThings.cginc"
 
 RWStructuredBuffer<float4> pos;
 RWStructuredBuffer<float4> p;
 RWStructuredBuffer<float4> tmp;
+RWStructuredBuffer<float4> color;
 RWStructuredBuffer<Particle> swapBuffer;
 RWStructuredBuffer<CollisionData> collisionBuffer;
 RWStructuredBuffer<Grid> gridBuffer;
 RWStructuredBuffer<Nei> neisBuffer;
+
+
+RWStructuredBuffer<Nei> bros;
+struct N
+{
+	uint n[64];
+};
+RWStructuredBuffer<uint> cellCount;
+RWStructuredBuffer<N> nIndices;
 
 StructuredBuffer<Cubes> cubes;
 
@@ -83,21 +94,6 @@ float3 calcNormal(in float3 pos)
 void Particler (uint3 id : SV_DispatchThreadID)
 {
 	float3 vel = (p[id.x].xyz - pos[id.x].xyz) / deltaTime;
-
-	float3 me = p[id.x].xyz;
-	float3 vo = ZERO;
-	for (uint i = 0; i < neisBuffer[id.x].num; ++i)
-	{
-		float3 ot = p[neisBuffer[id.x].neis[i]].xyz;
-		float3 otpos = pos[neisBuffer[id.x].neis[i]].xyz;
-		float3 otv = ot - otpos;
-
-		vo += cross(otv - vel, WS(me - ot, particleRad));
-		// float3 grad = WS(me - ot, particleRad) / rest; // * mass
-		// gradient += dot(grad, grad);
-		// density += W(me - ot, particleRad); // * mass
-	}
-
 	vel += gravity * deltaTime;
 	// vel += -calcNormalG(p[id.x].xyz) * deltaTime * length(gravity);
 	vel /= 1 + length(vel) * 0.005;
@@ -123,8 +119,14 @@ void Swap(uint3 id : SV_DispatchThreadID)
 	float3 aOne = normalizeFloat3(p[id.x].xyz, -worldSize, worldSize);
 	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
 	uint cell = fromGridToIndex((uint3)gridTemp, gridSize);
-	collisionBuffer[id.x].cell = cell;
-	collisionBuffer[id.x].particleID = id.x;
+	// collisionBuffer[id.x].cell = cell;
+	// collisionBuffer[id.x].particleID = id.x;
+
+	uint c;
+	InterlockedAdd(cellCount[cell], 1, c);
+	nIndices[cell].n[c] = id.x;
+
+	color[id.x] = (p[id.x] - pos[id.x]) / .45 * .5 + .5;
 }
 
 [numthreads(32, 1, 1)]
@@ -141,8 +143,8 @@ void Lamb(uint3 id : SV_DispatchThreadID)
 		gradient += dot(grad, grad);
 		density += W(me - ot, particleRad); // * mass
 	}
-	// if (map(me) >= -radius)
-	// 	density += rest / 4;
+	if (map(me) < radius)
+		density += W(me - calcNormal(me) * abs(map(me) - radius), particleRad);
 	
 	float l = density / rest - 1; // = 0
 	// l = max(l, 0);
@@ -156,17 +158,18 @@ void Collision(uint3 id : SV_DispatchThreadID)
 	float3 dp = ZERO;
 	float4 me = p[id.x];
 
-	for (uint i = 0; i < neisBuffer[id.x].num ; ++i)
+	for (uint i = 0; i < neisBuffer[id.x].num; ++i)
 	{
 		float4 ot = p[neisBuffer[id.x].neis[i]];
-		float tmp = pow(W(me.xyz - ot.xyz, particleRad) / W(particleRad * mQ, particleRad), mE);
-		float co = -mK * ((isnan(tmp)) ? 0.0 : tmp);
-		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad); // * mass
+		// float tmp = pow(W(me.xyz - ot.xyz, particleRad) / W(particleRad * mQ, particleRad), mE);
+		// float co = -mK * ((isnan(tmp)) ? 0.0 : tmp);
+		// dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad); // * mass
 
-		// if (distance(me.xyz, ot.xyz) < particleRad)
-		// 	dp += (me.xyz - ot.xyz) * (1.0 - distance(me.xyz, ot.xyz) / particleRad);
+		if (distance(me.xyz, ot.xyz) < particleRad)
+			dp += (me.xyz - ot.xyz) * (1.0 - distance(me.xyz, ot.xyz) / particleRad);
 	}
-	dp /= rest;
+	// dp /= rest;
+	dp /= 4;
 	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0) / iterations;
 	tmp[id.x].xyz = dp;
 }
@@ -185,6 +188,28 @@ void Find(uint3 id : SV_DispatchThreadID)
 	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
 
 	uint num = 0;
+	// for (int x = -1; x < 2; ++x)
+	// for (int y = -1; y < 2; ++y)
+	// for (int z = -1; z < 2; ++z)
+	// 	if (
+	// 	gridTemp.x + x > -1 && gridTemp.x + x < gridSize.x &&
+	// 	gridTemp.y + y > -1 && gridTemp.y + y < gridSize.y &&
+	// 	gridTemp.z + z > -1 && gridTemp.z + z < gridSize.z)
+	// 	{
+	// 		uint cell = fromGridToIndex((uint3)(gridTemp + int3(x, y, z)), gridSize);
+
+	// 		for (uint i = gridBuffer[cell].start; i < gridBuffer[cell].end; ++i)
+	// 		{
+	// 			if (num > 99) break;
+	// 			uint pID = collisionBuffer[i].particleID;
+	// 			if (distance(me, p[pID].xyz) < particleRad && id.x != pID)
+	// 			{
+	// 				neisBuffer[id.x].neis[num] = pID;
+	// 				num++;
+	// 			}
+	// 		}
+	// 	}
+
 	for (int x = -1; x < 2; ++x)
 	for (int y = -1; y < 2; ++y)
 	for (int z = -1; z < 2; ++z)
@@ -194,11 +219,9 @@ void Find(uint3 id : SV_DispatchThreadID)
 		gridTemp.z + z > -1 && gridTemp.z + z < gridSize.z)
 		{
 			uint cell = fromGridToIndex((uint3)(gridTemp + int3(x, y, z)), gridSize);
-
-			for (uint i = gridBuffer[cell].start; i < gridBuffer[cell].end; ++i)
+			for (uint i = 0; i < cellCount[cell]; ++i)
 			{
-				if (num > 99) break;
-				uint pID = collisionBuffer[i].particleID;
+				uint pID = nIndices[cell].n[i];
 				if (distance(me, p[pID].xyz) < particleRad && id.x != pID)
 				{
 					neisBuffer[id.x].neis[num] = pID;
@@ -207,23 +230,68 @@ void Find(uint3 id : SV_DispatchThreadID)
 			}
 		}
 
+	// uint cell = fromGridToIndex((uint3)(gridTemp), gridSize);
+	// for (uint i = 0; i < bros[cell].num; ++i)
+	// {
+	// 	if (num >= 100) { break; }
+	// 	uint pID = bros[cell].neis[i];
+	// 	if (distance(me, p[pID].xyz) < particleRad && id.x != pID)
+	// 	{
+	// 		neisBuffer[id.x].neis[num] = pID;
+	// 		num++;
+	// 	}
+	// }
+
 	neisBuffer[id.x].num = num;
 }
 
+/*-- TODO: --*/ 
+/* Reduce in blocks
+/*-----------*/
 [numthreads(32, 1, 1)]
-void TrueLimits(uint3 id : SV_DispatchThreadID)
+void Bro(uint3 id : SV_DispatchThreadID)
 {
-	uint cell = collisionBuffer[id.x].cell;
+	// int3 gridTemp = fromIndexToGrid(id.x, gridSize);
 
-	if (collisionBuffer[max(id.x - 1, 0)].cell != cell) //max
-		gridBuffer[cell].start = id.x;
-	if (collisionBuffer[id.x + 1].cell != cell) //y no min
-		gridBuffer[cell].end = id.x + 1;
+	// uint num = 0;
+	// for (int x = -1; x < 2; ++x)
+	// for (int y = -1; y < 2; ++y)
+	// for (int z = -1; z < 2; ++z)
+	// 	if 
+	// 	(
+	// 		gridTemp.x + x > -1 && gridTemp.x + x < gridSize.x &&
+	// 		gridTemp.y + y > -1 && gridTemp.y + y < gridSize.y &&
+	// 		gridTemp.z + z > -1 && gridTemp.z + z < gridSize.z
+	// 	)
+	// 	{
+	// 		uint cell = fromGridToIndex((gridTemp + int3(x, y, z)), gridSize);
+	// 		for (uint i = 0; i < cellCount[cell]; ++i)
+	// 		{
+	// 			if (num >= 100) { break; }
+	// 			uint pID = nIndices[cell].n[i];
+	// 			bros[id.x].neis[num] = pID;
+	// 			num++;
+	// 		}
+	// 	}
+	// bros[id.x].num = num;
 }
+
+// [numthreads(32, 1, 1)]
+// void TrueLimits(uint3 id : SV_DispatchThreadID)
+// {
+// 	uint cell = collisionBuffer[id.x].cell;
+
+// 	if (collisionBuffer[max(id.x - 1, 0)].cell != cell) //max
+// 		gridBuffer[cell].start = id.x;
+// 	if (collisionBuffer[id.x + 1].cell != cell) //y no min
+// 		gridBuffer[cell].end = id.x + 1;
+// }
 
 [numthreads(32, 1, 1)]
 void Clear(uint3 id : SV_DispatchThreadID)
 {
-	gridBuffer[id.x].start = 0;
-	gridBuffer[id.x].end = 0;
+	// gridBuffer[id.x].start = 0;
+	// gridBuffer[id.x].end = 0;
+
+	cellCount[id.x] = 0;
 }

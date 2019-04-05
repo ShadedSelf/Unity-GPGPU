@@ -29,7 +29,7 @@ struct Cubes
 struct Nei
 {
 	uint num;
-	uint neis[100];
+	uint neis[64];
 };
 
 
@@ -61,11 +61,17 @@ uint fromGridToIndex(uint3 grid, int3 gridSize)
 
 uint3 fromIndexToGrid(uint binID, uint3 num) 
 {
-	uint3 binID3D;
-	binID3D.z = binID / (num.x * num.y);
-	binID3D.y = (binID - binID3D.z * num.x * num.y) / num.x;
-	binID3D.x = binID - num.x * (binID3D.y + num.y * binID3D.z);
-	return binID3D;
+	// uint3 binID3D;
+	// binID3D.z = binID / (num.x * num.y);
+	// binID3D.y = (binID - binID3D.z * num.x * num.y) / num.x;
+	// binID3D.x = binID - num.x * (binID3D.y + num.y * binID3D.z);
+	// return binID3D;
+
+	uint3 res;
+	res.x = binID % num.x;
+	res.y = (binID / num.x) % num.y;
+	res.z = binID / (num.x * num.y);
+	return res;
 }
 
 bool checkAABB(float3 aPos, float3 aScale, float3 bPos, float3 bScale)

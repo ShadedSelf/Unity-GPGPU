@@ -40,10 +40,12 @@ public class ComputeKernel
 	public void RecordDispatch(CommandBuffer cmdBuff, bool profile)
 	{
 		if (profile) { cmdBuff.BeginSample(name); }
+		
 		cmdBuff.DispatchCompute(shader, index, 
 			threads.x / groupSizes.x, 
 			threads.y / groupSizes.y, 
 			threads.z / groupSizes.z);
+			
 		if (profile) { cmdBuff.EndSample(name); }
 	}
 }

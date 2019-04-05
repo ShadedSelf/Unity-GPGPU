@@ -155,13 +155,17 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
   material: {fileID: 2100000, guid: fcf6d9bb3840d40d9b00ab8869a4ebff, type: 2}
+  particlecs: {fileID: 7200000, guid: 79d50399b97544030afd8cd7de32a8a1, type: 3}
+  sortcs: {fileID: 7200000, guid: 46ae0773ab3be47efa4152fe31632c89, type: 3}
   particleCount: 15000
   iterations: 4
-  radius: 0.05
+  radius: 0.1
+  draw: 1
+  compute: 1
   dTMult: 1.5
   maxVelocity: 5
   gridSize: 12
-  worldSize: {x: 3, y: 3, z: 3}
+  worldSize: {x: 5, y: 5, z: 5}
   gravity: {x: 0, y: -2, z: 0}
   rad: 0.25
   lambad: 200
@@ -171,8 +175,6 @@ MonoBehaviour:
   mE: 4
   cubes:
   - {fileID: 1517501357}
-  particlecs: {fileID: 7200000, guid: 79d50399b97544030afd8cd7de32a8a1, type: 3}
-  sortcs: {fileID: 7200000, guid: 46ae0773ab3be47efa4152fe31632c89, type: 3}
 --- !u!1 &358553525
 GameObject:
   m_ObjectHideFlags: 0
@@ -364,6 +366,18 @@ Prefab:
     - target: {fileID: 11496292, guid: 0abab5bb77339e4428787a870eb31bd3, type: 2}
       propertyPath: m_fpsTextUpdateRate
       value: 1
+      objectReference: {fileID: 0}
+    - target: {fileID: 22415034, guid: 0abab5bb77339e4428787a870eb31bd3, type: 2}
+      propertyPath: m_AnchoredPosition.x
+      value: -163.56982
+      objectReference: {fileID: 0}
+    - target: {fileID: 22493042, guid: 0abab5bb77339e4428787a870eb31bd3, type: 2}
+      propertyPath: m_AnchoredPosition.x
+      value: -163.56982
+      objectReference: {fileID: 0}
+    - target: {fileID: 22493042, guid: 0abab5bb77339e4428787a870eb31bd3, type: 2}
+      propertyPath: m_AnchoredPosition.y
+      value: -412.00003
       objectReference: {fileID: 0}
     m_RemovedComponents: []
   m_ParentPrefab: {fileID: 100100000, guid: 0abab5bb77339e4428787a870eb31bd3, type: 2}
