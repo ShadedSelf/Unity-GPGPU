@@ -60,7 +60,7 @@ public class Particles : MonoBehaviour
 
 		system.AddBuffer("tmp",				particleCount, sizeof(float) * 4);
 		system.AddBuffer("pos",				particleCount, sizeof(float) * 4);
-		system.AddBuffer("p",				particleCount, sizeof(float) * 4);
+		system.AddBuffer("np",				particleCount, sizeof(float) * 4);
 		system.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 2);
 		system.AddBuffer("collisionBuffer", particleCount, sizeof(uint) * 2);
 		system.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 65);
@@ -84,7 +84,7 @@ public class Particles : MonoBehaviour
 
 		system.SetAllBuffers();
 		material.SetBuffer("pos",	system.GetBuffer("pos"));
-        material.SetBuffer("p",		system.GetBuffer("p"));
+        material.SetBuffer("np",	system.GetBuffer("np"));
         material.SetBuffer("color", system.GetBuffer("color"));
 		sorter.shader.SetBuffer(sorter.sortKernel, "collisionBuffer", system.GetBuffer("collisionBuffer"));
 		
@@ -114,7 +114,7 @@ public class Particles : MonoBehaviour
         for (int i = 0; i < particleCount; i++)
             particles[i] = Random.insideUnitSphere * worldSize.x;
 		system.SetBufferData("pos", particles);
-		system.SetBufferData("p", particles);
+		system.SetBufferData("np", particles);
 
 		drawArgs = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
 		uint numIndices = mesh.GetIndexCount(0);
@@ -136,6 +136,7 @@ public class Particles : MonoBehaviour
 		system.SetBufferData("cubes", cubeData);
 	}
 	
+	/*-- Move to FixedUpdate -- */
 	void Update() 
 	{
 		system.shader.SetFloat("deltaTime", Time.deltaTime * dTMult);
