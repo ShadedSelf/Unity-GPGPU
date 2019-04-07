@@ -71,9 +71,9 @@ float3 calcNormalG(in float3 pos)
 
 float map(float3 p)
 {
-	float d = sdBox(p, worldSize);
+	float d = -sdBox(p, worldSize);
 	for (int i = 0; i < cubeCount; i++)
-		d = max(d, -sdBox(mul(cubes[i].rot, p - cubes[i].position.xyz), cubes[i].scale.xyz + radius));
+		d = min(d, sdBox(mul(cubes[i].rot, p - cubes[i].position.xyz), cubes[i].scale.xyz + radius));
 	return d;
 }
 
@@ -93,6 +93,9 @@ float3 calcNormal(in float3 pos)
 [numthreads(32, 1, 1)]
 void Particler (uint3 id : SV_DispatchThreadID)
 {
+	// if (map(pos[id.x].xyz) < particleRad)
+	// 	pos[id.x].xyz -= calcNormal(pos[id.x].xyz) * (particleRad - max(map(pos[id.x].xyz), 0)) * 0.5;
+
 	float3 vel = (np[id.x].xyz - pos[id.x].xyz) / deltaTime;
 	vel += gravity * deltaTime;
 	// vel += -calcNormalG(np[id.x].xyz) * deltaTime * length(gravity);
@@ -177,7 +180,18 @@ void Collision(uint3 id : SV_DispatchThreadID)
 	}
 	// dp /= rest;
 	dp /= (iterations * 2);
-	dp -= calcNormal(me.xyz) * max(map(me.xyz), 0) / iterations;
+
+	// float3 grad = calcNormal(me.xyz);
+	// float d = map(me.xyz);
+	// float p = -min(d - particleRad, 0);
+	// dp -= grad * p;
+	// // dp -= calcNormal(me.xyz) * max(map(me.xyz), 0) / iterations;
+	if (map(me.xyz) < particleRad)
+		dp += calcNormal(me.xyz) * (particleRad - max(map(me.xyz), 0));
+
+	// dp += calcNormal(me.xyz) * -min(map(me.xyz), 0) / iterations;
+
+
 	tmp[id.x].xyz = dp;
 }
 

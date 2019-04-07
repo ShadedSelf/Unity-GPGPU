@@ -160,7 +160,7 @@ public class Particles : MonoBehaviour
 
 		material.SetVector("_WorldPos", new Vector4(transform.position.x, transform.position.y, transform.position.z));
 		material.SetFloat("radius", radius);
-
+		
 		DynamicBuffers();
 
 		if (compute) { Graphics.ExecuteCommandBuffer(cmdBuff); }
@@ -177,7 +177,7 @@ public class Particles : MonoBehaviour
 	void OnDrawGizmos()
 	{
 		Gizmos.color = Color.white;
-		Gizmos.DrawWireCube(transform.position, worldSize * 2 + Vector3.one * radius * 2);
+		Gizmos.DrawWireCube(transform.position, worldSize * 2/* + Vector3.one * radius * 2*/);
 
 		// for	(int i = 0; i < gridSize; i++)
 		// for	(int j = 0; j < gridSize; j++)

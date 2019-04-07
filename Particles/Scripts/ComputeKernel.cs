@@ -14,17 +14,17 @@ public class ComputeKernel
 
 	public ComputeKernel(string name, ComputeShader shader, Vector3Int threads)
 	{
-		_name = name;
-		_shader = shader;
-		_threads = threads;
-		_index = shader.FindKernel(name);
+		_name		= name;
+		_shader		= shader;
+		_threads	= threads;
+		_index		= shader.FindKernel(name);
 		
 		uint x, y, z;
 		shader.GetKernelThreadGroupSizes(_index, out x, out y, out z);
 		_groupSizes = new Vector3Int((int)x, (int)y, (int)z);
 	}
 
-	public void SetBuffer(ComputeBuffer buffer, string name)
+	public void SetBuffer(string name, ComputeBuffer buffer)
 	{
 		_shader.SetBuffer(_index, name, buffer);
 	}
@@ -32,8 +32,8 @@ public class ComputeKernel
 	public void Dispacth()
 	{
 		_shader.Dispatch(_index, 
-			_threads.x / _groupSizes.x, 
-			_threads.y / _groupSizes.y, 
+			  _threads.x / _groupSizes.x, 
+			 _threads.y / _groupSizes.y, 
 			_threads.z / _groupSizes.z);
 	}
 
@@ -42,8 +42,8 @@ public class ComputeKernel
 		if (profile) { cmdBuff.BeginSample(_name); }
 		
 		cmdBuff.DispatchCompute(_shader, _index, 
-			_threads.x / _groupSizes.x, 
-			_threads.y / _groupSizes.y, 
+			  _threads.x / _groupSizes.x, 
+			 _threads.y / _groupSizes.y, 
 			_threads.z / _groupSizes.z);
 			
 		if (profile) { cmdBuff.EndSample(_name); }
