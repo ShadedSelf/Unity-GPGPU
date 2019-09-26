@@ -1,0 +1,241 @@
+﻿#pragma kernel CSMain
+#include "RayThings.hlsl"
+#include "MatrixThings.hlsl"
+
+#define vec3 float3
+
+RWTexture2D<float> Result;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+
+float3 _PreRotVec;
+float3 _PostRotVec;
+float3 _OffSet;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+
+int texSize;
+int _Iterations;
+int _ColorIterations;
+
+float _Time;
+int _Frame;
+
+float _Scale;
+float _PreRotAngle;
+float _PostRotAngle;
+float _Rad;
+
+float3 rd;
+float3 ro;
+
+float3 _R0;
+
+float4 folds[16];
+int numFolds;
+
+void icosaFolds()
+{
+	numFolds = 6;
+
+	float3 n1 = normalize(float3(-PHI, PHI - 1.0, 1.0));
+	float3 n2 = normalize(float3(1.0, -PHI, PHI + 1.0));
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = float4(n2, 0);
+	folds[2] = float4(1, 0, 1, 1);
+	folds[3] = float4(n1, 0);
+	folds[4] = float4(n2, 0);
+	folds[5] = float4(0, 0, 1, 1);
+}
+
+void tetraFolds()
+{
+	numFolds = 6;
+
+	folds[0] = normalize(float4(1, 1, 0, 0));
+	folds[1] = normalize(float4(1, 0, 1, 0));
+	folds[2] = normalize(float4(0, 1, 1, 0));
+	folds[3] = normalize(float4(1, -1, 0, 0));
+	folds[4] = normalize(float4(1, 0, -1, 0));
+	folds[5] = normalize(float4(0, 1, -1, 0));
+}
+
+void octaFolds()
+{
+	numFolds = 4;
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = normalize(float4(1, -1, 0, 0));
+	folds[2] = normalize(float4(-1, 0, 1, 0));
+	folds[3] = normalize(float4(1, -1, 0, 0));
+}
+
+void cubicFolds()
+{
+	numFolds = 4;
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = normalize(float4(1, -1, 0, 0));
+	folds[2] = normalize(float4(1, 0, -1, 0));
+	folds[3] = normalize(float4(0, 1, -1, 0));
+}
+
+void testFolds()
+{
+	numFolds = 1;
+
+	folds[0] = normalize(float4(1, 1, 1, 0));
+}
+
+//p = clamp(p, -angle.x, angle.x)*2.0 - p;
+//p *= clamp(max(MR2 / dot(p, p), MR2), 0.0, 1.0);
+//p = abs(mod(p + angle.x, angle.x * 4) - angle.x * 2) - angle.x;
+
+float3 ortho(float3 v)
+{
+	return abs(v.x) > abs(v.z) ? float3(-v.y, v.x, 0.0) : float3(0.0, -v.z, v.y);
+}
+
+float3 getConeSample(float3 dir, float extent, float seed)
+{
+	dir = normalize(dir);
+	float3 o1 = normalize(ortho(dir));
+	float3 o2 = normalize(cross(dir, o1));
+	float2 r = float2(rand(18.633 + seed), rand(35.571 + seed));
+	r.x = r.x*2.*PI;
+	r.y = 1.0 - r.y*extent;
+	float oneminus = sqrt(1.0 - r.y*r.y);
+	return cos(r.x)*oneminus*o1 + sin(r.x)*oneminus*o2 + r.y*dir;
+}
+
+float3 cosineDirection(in float seed, in float3 nor)
+{
+	float u = rand(78.233 + seed);
+	float v = rand(10.873 + seed);
+
+	float a = 6.2831853 * v;
+	u = 2.0 * u - 1.0;
+	return normalize(nor + float3(sqrt(1.0 - u * u) * float2(cos(a), sin(a)), u));
+}
+
+float map(float3 p)
+{
+	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
+	for (int n = 0; n < _Iterations; n++)
+	{
+		p = mul(p, rot(_PreRotVec, _PreRotAngle));
+		for (int j = 0; j < numFolds; j++)
+		{
+			p = (int)folds[j].w ?
+				((int3)folds[j].xyz ? abs(p) : p) :
+				p - 2 * max(0, dot(p, folds[j].xyz) - 0) * folds[j].xyz;
+		}
+		p = mul(p - _OffSet, rot(_PostRotVec, _PostRotAngle)) + _OffSet;
+		p = p * _Scale - _OffSet * (_Scale - 1.0);
+	}
+	return (length(p) - _Rad) * pow(_Scale, -float(_Iterations));
+}
+
+float3 calcNormal(in float3 pos)
+{
+	float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize(
+		e.xyy*map(pos + e.xyy) +
+		e.yyx*map(pos + e.yyx) +
+		e.yxy*map(pos + e.yxy) +
+		e.xxx*map(pos + e.xxx));
+}
+
+bool raymarchW(float3 oo, float3 dd, out float4 pos)
+{
+	float t = 0;
+	float d = 0;
+	int i = 0;
+	do
+	{
+		d = map(oo + dd * t);
+		t += d;
+	} while (i++ < maxSteps && t < drawDist && d > epSI);
+
+	pos.xyz = oo + dd * t;;
+	pos.w = i;
+	return (t < drawDist);
+}
+
+void init()
+{
+	icosaFolds();
+}
+
+float ii;
+
+float3 color(float3 from, float3 dir, float sa)
+{
+	float3 hit = 0;
+	float3 direct = 0;
+	float3 hitNormal = 0;
+
+	float3 luminance = 1;
+
+	float4 pos;
+	for (int i = 0; i < 3; i++) 
+	{
+		if (raymarchW(from, dir, pos))
+		{
+			hit = pos.xyz;
+			hitNormal = calcNormal(pos.xyz);
+
+			dir = cosineDirection(76.2 + 73.1 * float(i) + sa + 17.7 * float(_Frame), hitNormal);
+			luminance *= .5;
+			from = hit + hitNormal * epSI * 2;
+
+			float3 sunSampleDir = getConeSample(-_LightDir, .0001, 76.2 + 73.1 * float(i) + sa + 17.7 * float(_Frame));
+			float sunLight = saturate(dot(hitNormal, sunSampleDir));
+			if (sunLight > .5 && !raymarchW(from, sunSampleDir, pos))
+				direct += sunLight * luminance;
+		}
+		else
+			//return direct;
+			//return (saturate(dot(dir, -_LightDir) * .5 + .5)) * (i > 0);
+			//return (saturate(dot(dir, -_LightDir) * .5 + .5)) * (i > 0);
+			return direct + luminance * (saturate(dot(dir, -_LightDir) * .5 + .5)) * (i > 0);
+	}
+	return 0;
+}
+
+float ihash(int n)
+{
+	n = (n << 13) ^ n;
+	n = (n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff;
+	return (1.0 / 2147483647.0) * float(n);
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	maxSteps = 150;
+
+	float2 uv = float2((float)id.x / texSize, (float)id.y / texSize);
+	uv = (uv - .5) * fwMult;
+	ro = eye;
+	rd = normalize(((right * uv.x + up * uv.y) + eye + fw * fwMult) - eye);
+	init();
+
+	float sa = ihash(id.x + 1920U * id.y + (1920U * 1080U)*uint(_Frame));
+
+	float temp = color(ro, rd, sa) /** (1 - ((float)ii / (float)maxSteps))*/;
+	temp = pow(temp, 1. / 2.2);
+	temp = lerp(Result[id.xy], temp, 1.0 / (float)(_Frame + 1));
+
+	Result[id.xy] = temp;
+}

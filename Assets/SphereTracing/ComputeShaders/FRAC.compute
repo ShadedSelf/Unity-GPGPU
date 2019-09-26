@@ -1,0 +1,225 @@
+﻿#pragma kernel CSMain
+#include "RayThings.hlsl"
+#include "MatrixThings.hlsl"
+
+#define vec3 float3
+
+RWTexture2D<float4> Result;
+
+float3 eye;
+float3 up;
+float3 right;
+float3 fw;
+
+float3 _LightDir;
+
+float3 _PreRotVec;
+float3 _PostRotVec;
+float3 _OffSet;
+
+int maxSteps;
+float drawDist;
+float epSI;
+
+float fwMult;
+
+int texSize;
+int _Iterations;
+int _ColorIterations;
+
+float _Time;
+
+float _Scale;
+float _PreRotAngle;
+float _PostRotAngle;
+float _Rad;
+
+float3 rd;
+float3 ro;
+
+float3 _R0;
+
+float4 folds[16];
+int numFolds;
+
+void icosaFolds()
+{
+	numFolds = 6;
+
+	float3 n1 = normalize(float3(-PHI, PHI - 1.0, 1.0));
+	float3 n2 = normalize(float3(1.0, -PHI, PHI + 1.0));
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = float4(n2, 0);
+	folds[2] = float4(1, 0, 1, 1);
+	folds[3] = float4(n1, 0);
+	folds[4] = float4(n2, 0);
+	folds[5] = float4(0, 0, 1, 1);
+}
+
+void tetraFolds()
+{
+	numFolds = 6;
+
+	folds[0] = normalize(float4(1, 1, 0, 0));
+	folds[1] = normalize(float4(1, 0, 1, 0));
+	folds[2] = normalize(float4(0, 1, 1, 0));
+	folds[3] = normalize(float4(1, -1, 0, 0));
+	folds[4] = normalize(float4(1, 0, -1, 0));
+	folds[5] = normalize(float4(0, 1, -1, 0));
+}
+
+void octaFolds()
+{
+	numFolds = 4;
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = normalize(float4(1, -1, 0, 0));
+	folds[2] = normalize(float4(-1, 0, 1, 0));
+	folds[3] = normalize(float4(1, -1, 0, 0));
+}
+
+void cubicFolds()
+{
+	numFolds = 4;
+
+	folds[0] = float4(1, 1, 1, 1);
+	folds[1] = normalize(float4(1, -1, 0, 0));
+	folds[2] = normalize(float4(1, 0, -1, 0));
+	folds[3] = normalize(float4(0, 1, -1, 0));
+}
+
+void testFolds()
+{
+	numFolds = 1;
+
+	folds[0] = normalize(float4(1, 1, 1, 0));
+}
+
+//p = clamp(p, -angle.x, angle.x)*2.0 - p;
+//p *= clamp(max(MR2 / dot(p, p), MR2), 0.0, 1.0);
+//p = abs(mod(p + angle.x, angle.x * 4) - angle.x * 2) - angle.x;
+
+
+#define fixedRadius2    (1.1)
+#define minRadius2      (0.11)
+
+float3 sphereFold(float3 z, float dz) {
+	float r2 = dot(z,z);
+	if (r2 < minRadius2) { 
+		// linear inner scaling
+		float temp = (fixedRadius2/minRadius2);
+		z *= temp;
+		dz*= temp;
+	} else if (r2 < fixedRadius2) { 
+		// this is the actual sphere inversion
+		float temp =(fixedRadius2/r2);
+		z *= temp;
+		dz*= temp;
+	}
+	return z;
+}
+
+float2 st;
+float color(float3 p)
+{
+	float	m = 1,
+			o = 1;
+			// p = sphereFold(p + float3(0, 1, 0), 1.0);
+	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
+	for (int n = 0; n < _ColorIterations; n++)
+	{
+		p = mul(p, rot(_PreRotVec, _PreRotAngle));
+		for (int j = 0; j < numFolds; j++)
+		{
+			p = (int)folds[j].w ?
+				((int3)folds[j].xyz ? abs(p) : p) :
+				p - 2 * max(0, dot(p, folds[j].xyz) - 0) * folds[j].xyz;
+		}
+		p = mul(p - _OffSet, rot(_PostRotVec, _PostRotAngle)) + _OffSet;
+		p = p * _Scale - _OffSet * (_Scale - 1.0);
+
+		float t = distance(p, float3(st.x, st.y, st.x * st.y));
+		t *= t;
+		m = max(m, t);
+		o = min(o, t / m);
+	}
+	return o;
+}
+
+float map(float3 p)
+{
+		// p = sphereFold(p + float3(0, 1, 0), 1.0);
+	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
+	for (int n = 0; n < _Iterations; n++)
+	{
+		p = mul(p, rot(_PreRotVec, _PreRotAngle));
+		for (int j = 0; j < numFolds; j++)
+		{
+			p = (int)folds[j].w ?
+				((int3)folds[j].xyz ? abs(p) : p) :
+				p - 2 * max(0, dot(p, folds[j].xyz) - 0) * folds[j].xyz;
+		}
+		p = mul(p - _OffSet, rot(_PostRotVec, _PostRotAngle)) + _OffSet;
+		p = p * _Scale - _OffSet * (_Scale - 1.0);
+	}
+	return (length(p) - _Rad) * pow(_Scale, -float(_Iterations));
+}
+
+float3 calcNormal(in float3 pos)
+{
+	float2 e = float2(1.0, -1.0) * 0.5773 * 0.0005;
+	return normalize(
+		e.xyy*map(pos + e.xyy) +
+		e.yyx*map(pos + e.yyx) +
+		e.yxy*map(pos + e.yxy) +
+		e.xxx*map(pos + e.xxx));
+}
+
+bool raymarchW(inout int i, out float3 pos)
+{
+	float t = 0;
+	float d = 100;
+	for (i = 0; i < maxSteps && d > epSI && t < drawDist; i++)
+	{
+		d = map(ro + rd * t);
+		t += d;
+	}
+	pos = ro + rd * t;
+	return (t < drawDist);
+}
+
+void init()
+{
+	st.y = sin(_Time / 11.645) * .5;
+	st.x = cos(_Time / 9.145) * .5;
+	icosaFolds();
+}
+
+float3 pal(float t, float3 a, float3 b, float3 c, float3 d)
+{
+	return a + b * cos(6.28318 * (c * t + d));
+}
+
+[numthreads(32, 32, 1)]
+void CSMain(uint3 id : SV_DispatchThreadID)
+{
+	float2 uv = float2((float)id.x / texSize, (float)id.y / texSize);
+	uv = (uv - .5) * fwMult;
+	ro = eye;
+	rd = normalize(((right * uv.x + up * uv.y) + eye + fw * fwMult) - eye);
+	init();
+
+	float3 temp = 0;
+	float3 pos;
+	int i = 0;
+	if (raymarchW(i, pos))
+	{
+		temp = rain(color(pos) * 15, _Time / 30) *
+			(1 - ((float)i / (float)maxSteps)) *
+			(dot(calcNormal(pos), -rd) * .5 + .5);
+	}
+
+	temp = pow(temp, 1 / 1.5);
+	Result[id.xy] = float4(temp, 1);
+}
