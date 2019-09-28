@@ -15,7 +15,7 @@ public class Particles : MonoBehaviour
 
 	public Mesh mesh;
 	public Shader shader;
-	public ComputeShader particlecs;
+	public ComputeShader particleCs;
 	public ComputeShader sortcs;
 	[Header("^^")]
 	public int particleCount = 100000;
@@ -23,6 +23,7 @@ public class Particles : MonoBehaviour
 	public float radius = .1f;
 	public bool draw = true;
 	public bool compute = true;
+	public bool sort = true;
 	[Header("World")]
 	[Range(1, 4)]
 	public float dTMult = 3;
@@ -56,13 +57,13 @@ public class Particles : MonoBehaviour
 		// gridSize = 30;
 
 		sorter = new Sorter(particleCount, sortcs);
-		system = new ComputeSystem(particlecs, false);
+		system = new ComputeSystem(particleCs, true);
 
 		system.data.AddBuffer("tmp",			particleCount, sizeof(float) * 4);
 		system.data.AddBuffer("pos",			particleCount, sizeof(float) * 4);
 		system.data.AddBuffer("np",				particleCount, sizeof(float) * 4);
 		system.data.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 2);
-		system.data.AddBuffer("collisionBuffer", particleCount, sizeof(uint) * 2);
+		system.data.AddBuffer("collisionBuffer",particleCount, sizeof(uint) * 2);
 		system.data.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 65);
 		system.data.AddBuffer("cubes",			cubes.Length, sizeof(float) * 4 * 6);
 		system.data.AddBuffer("color",			particleCount, sizeof(float) * 4);
@@ -91,7 +92,8 @@ public class Particles : MonoBehaviour
 		cmdBuff.name = "Particle System";
 
 		system.RecordDispatch("Particler", cmdBuff);
-		// sorter.SetCmdBuffer(cmdBuff);
+		if (sort)
+			sorter.SetCmdBuffer(cmdBuff);
 		system.RecordDispatch("Swap", cmdBuff);
 		// // system.RecordDispatch("TrueLimits", cmdBuff);
 		// system.RecordDispatch("Bro", cmdBuff);
@@ -113,7 +115,7 @@ public class Particles : MonoBehaviour
 		Vector4[] particles = new Vector4[particleCount];
         for (int i = 0; i < particleCount; i++)
             particles[i] = Random.insideUnitSphere * worldSize.x;
-		system.data.buffers["pos"].SetData(particles);//SetBufferData("pos", particles);
+		system.data.buffers["pos"].SetData(particles);
 		system.data.buffers["np"].SetData(particles);
 
 		drawArgs = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);

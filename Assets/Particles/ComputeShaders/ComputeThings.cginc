@@ -33,15 +33,10 @@ struct Nei
 };
 
 
-float normalizeFloat(float value, float min, float max)
-{
-	return (value - min) / (max - min);
-}
-
-float3 normalizeFloat3(float3 value, float3 min, float3 max)
-{
-	return (value - min) / (max - min);
-}
+float relative(float value, float min, float max)		{ return (value - min) / (max - min); }
+float2 relative(float2 value, float2 min, float2 max)	{ return (value - min) / (max - min); }
+float3 relative(float3 value, float3 min, float3 max)	{ return (value - min) / (max - min); }
+float4 relative(float4 value, float4 min, float4 max)	{ return (value - min) / (max - min); }
 
 uint fromGridToIndex(uint3 grid, int3 gridSize)
 {
@@ -65,7 +60,7 @@ uint3 fromIndexToGrid(uint binID, uint3 num)
 
 uint cellFromPos(float3 pos, float3 worldSize, uint3 gridSize)
 {
-	float3 aOne = normalizeFloat3(pos, -worldSize, worldSize);
+	float3 aOne = relative(pos, -worldSize, worldSize);
 	int3 gridTemp = clamp(floor(aOne * gridSize), 0, gridSize - 1);
 	return fromGridToIndex((uint3)gridTemp, gridSize);
 }
