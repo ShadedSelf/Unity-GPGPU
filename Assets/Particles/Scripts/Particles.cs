@@ -3,7 +3,15 @@ using System.Collections.Generic;
 using UnityEngine;
 using UnityEngine.Rendering;
 
-struct CubeData
+public struct Particle
+{
+	public Vector3 pos;
+	public Vector3 vel;
+	public float mass;
+	public int flag;
+}
+
+public struct CubeData
 {
 	public Vector4 pos;
 	public Vector4 scale;
@@ -60,9 +68,9 @@ public class Particles : MonoBehaviour
 		system = new ComputeSystem(particleCs, true);
 
 		system.data.AddBuffer("tmp",			particleCount, sizeof(float) * 4);
-		system.data.AddBuffer("pos",			particleCount, sizeof(float) * 4);
+		system.data.AddBuffer("particles",		particleCount, sizeof(float) * 4 * 2);
 		system.data.AddBuffer("np",				particleCount, sizeof(float) * 4);
-		system.data.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 2);
+		system.data.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 3);
 		system.data.AddBuffer("collisionBuffer",particleCount, sizeof(uint) * 2);
 		system.data.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 65);
 		system.data.AddBuffer("cubes",			cubes.Length, sizeof(float) * 4 * 6);
@@ -74,18 +82,16 @@ public class Particles : MonoBehaviour
 
 		system.AddKernel("Particler",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Swap",		new Vector3Int(particleCount, 1, 1));
-		// system.AddKernel("TrueLimits",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Find",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Lamb",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Collision",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Tmp",			new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Clear",		new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
-		// system.AddKernel("Bro",			new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
 
 		system.BindComputeData();
-		material.SetBuffer("pos",	system.data.buffers["pos"]);
-        material.SetBuffer("np",	system.data.buffers["np"]);
-        material.SetBuffer("color", system.data.buffers["color"]);
+		// material.SetBuffer("particles",	system.data.buffers["particles"]);
+        material.SetBuffer("np",		system.data.buffers["np"]);
+        material.SetBuffer("color", 	system.data.buffers["color"]);
 		sorter.shader.SetBuffer(sorter.sortKernel, "collisionBuffer", system.data.buffers["collisionBuffer"]);
 		
 		cmdBuff = new CommandBuffer();
@@ -95,8 +101,6 @@ public class Particles : MonoBehaviour
 		if (sort)
 			sorter.SetCmdBuffer(cmdBuff);
 		system.RecordDispatch("Swap", cmdBuff);
-		// // system.RecordDispatch("TrueLimits", cmdBuff);
-		// system.RecordDispatch("Bro", cmdBuff);
 		system.RecordDispatch("Find", cmdBuff);
 		for (int i = 0; i < iterations; i++)
 		{
@@ -112,11 +116,22 @@ public class Particles : MonoBehaviour
 
 	void SetData()
 	{
-		Vector4[] particles = new Vector4[particleCount];
+		Vector4[] newPositions = new Vector4[particleCount];
         for (int i = 0; i < particleCount; i++)
-            particles[i] = Random.insideUnitSphere * worldSize.x;
-		system.data.buffers["pos"].SetData(particles);
-		system.data.buffers["np"].SetData(particles);
+		{
+            newPositions[i] = Random.insideUnitSphere * worldSize.x;
+		}
+		system.data.buffers["np"].SetData(newPositions);
+
+		Particle[] particles = new Particle[particleCount];
+        for (int i = 0; i < particleCount; i++)
+		{
+            particles[i].pos = newPositions[i];
+            particles[i].vel = Vector3.zero;
+            particles[i].mass = 1;
+            particles[i].flag = 0;
+		}
+		system.data.buffers["particles"].SetData(particles);
 
 		drawArgs = new ComputeBuffer(1, 5 * sizeof(uint), ComputeBufferType.IndirectArguments);
 		uint numIndices = mesh.GetIndexCount(0);

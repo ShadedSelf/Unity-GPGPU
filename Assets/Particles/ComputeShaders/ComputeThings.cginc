@@ -1,22 +1,24 @@
-#define PI 3.1415926535
+#define PI acos(-1)
 static const float3 ZERO = float3(0, 0, 0);
 
 struct Particle
 {
-	float4 pos;
-	float4 p;
+	float3 pos;
+	float3 vel;
+	float mass;
+	int propID;
+};
+
+struct SwapData
+{
+	Particle particle;
+	float4 np;
 };
 
 struct CollisionData
 {
 	uint cell;
 	uint particleID;
-};
-
-struct Grid
-{
-	uint start;
-	uint end;
 };
 
 struct Cubes
@@ -28,8 +30,13 @@ struct Cubes
 
 struct Nei
 {
-	uint num;
+	uint count;
 	uint neis[64];
+};
+
+struct N
+{
+	uint n[64];
 };
 
 
