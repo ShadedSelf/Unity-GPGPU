@@ -1,5 +1,6 @@
 #define PI acos(-1)
 static const float3 ZERO = float3(0, 0, 0);
+static const int nn = 256;
 
 struct Particle
 {
@@ -31,12 +32,12 @@ struct Cubes
 struct Nei
 {
 	uint count;
-	uint neis[64];
+	uint neis[nn];
 };
 
 struct N
 {
-	uint n[64];
+	uint n[nn];
 };
 
 

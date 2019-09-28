@@ -34,7 +34,7 @@ public class Particles : MonoBehaviour
 	public bool sort = true;
 	[Header("World")]
 	[Range(1, 4)]
-	public float dTMult = 3;
+	public float dTMult = 1.5f;
 	public float maxVelocity = .5f;
 	public int gridSize = 5;
 	public Vector3 worldSize;
@@ -56,6 +56,7 @@ public class Particles : MonoBehaviour
 	private Sorter sorter;
 
 	int NextMultipleOf(int value, int x) => ((value / x) + 1) * x;
+	private const int nn = 256;
 
 	void OnEnable() 
 	{
@@ -72,20 +73,20 @@ public class Particles : MonoBehaviour
 		system.data.AddBuffer("np",				particleCount, sizeof(float) * 4);
 		system.data.AddBuffer("swapBuffer",		particleCount, sizeof(float) * 4 * 3);
 		system.data.AddBuffer("collisionBuffer",particleCount, sizeof(uint) * 2);
-		system.data.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * 65);
+		system.data.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * (nn + 1));
 		system.data.AddBuffer("cubes",			cubes.Length, sizeof(float) * 4 * 6);
 		system.data.AddBuffer("color",			particleCount, sizeof(float) * 4);
 		system.data.AddBuffer("gridBuffer",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 2);
 		system.data.AddBuffer("cellCount",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint));
-		system.data.AddBuffer("nIndices",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 64);
-		system.data.AddBuffer("bros",			NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 65);
+		system.data.AddBuffer("nIndices",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * nn);
 
 		system.AddKernel("Particler",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Swap",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Find",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Lamb",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Collision",	new Vector3Int(particleCount, 1, 1));
-		system.AddKernel("Tmp",			new Vector3Int(particleCount, 1, 1));
+		system.AddKernel("ApplyDelta",	new Vector3Int(particleCount, 1, 1));
+		system.AddKernel("Update",		new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Clear",		new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
 
 		system.BindComputeData();
@@ -107,8 +108,9 @@ public class Particles : MonoBehaviour
 			system.RecordDispatch("Lamb", cmdBuff);
 			cmdBuff.SetComputeIntParam(system.shader, "currentIteration", i + 1);
 			system.RecordDispatch("Collision", cmdBuff);
-			system.RecordDispatch("Tmp", cmdBuff);
+			system.RecordDispatch("ApplyDelta", cmdBuff);
 		}
+		system.RecordDispatch("Update", cmdBuff);
 		system.RecordDispatch("Clear", cmdBuff);
 
 		SetData();

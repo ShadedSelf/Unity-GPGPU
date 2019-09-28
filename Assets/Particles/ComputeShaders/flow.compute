@@ -2,9 +2,10 @@
 #pragma kernel Clear
 #pragma kernel Collision
 #pragma kernel Find
-#pragma kernel Tmp
+#pragma kernel ApplyDelta
 #pragma kernel Lamb
 #pragma kernel Swap
+#pragma kernel Update
 
 #include "ComputeThings.cginc"
 
@@ -81,13 +82,12 @@ float3 calcNormal(in float3 pos)
 [numthreads(32, 1, 1)]
 void Particler (uint3 id : SV_DispatchThreadID)
 {
-	float3 vel = (np[id.x].xyz - particles[id.x].pos) / deltaTime;
+	float3 vel = particles[id.x].vel;
 	// if (length(vel) < 0.001) { return; }
 	// vel += -calcNormalG(np[id.x].xyz) * deltaTime * length(gravity);
 	vel /= 1 + length(vel) * 0.001;
 	vel += gravity * 0.05;// * deltaTime;
 
-	particles[id.x].pos = np[id.x].xyz;
 	float3 pos = np[id.x].xyz;
 	float3 np = pos + vel * deltaTime;
 
@@ -170,7 +170,7 @@ void Collision(uint3 id : SV_DispatchThreadID)
 }
 
 [numthreads(32, 1, 1)]
-void Tmp(uint3 id : SV_DispatchThreadID)
+void ApplyDelta(uint3 id : SV_DispatchThreadID)
 {
 	np[id.x].xyz += tmp[id.x].xyz;
 }
@@ -192,7 +192,7 @@ void Find(uint3 id : SV_DispatchThreadID)
 			gridTemp.z + z > -1 && gridTemp.z + z < gridSize.z)
 			{
 				uint cell = fromGridToIndex((uint3)(gridTemp + int3(x, y, z)), gridSize);
-				for (uint i = 0; i < cellCount[cell] && num < 64; ++i)
+				for (uint i = 0; i < cellCount[cell] && num < nn; ++i)
 				{
 					uint pID = nIndices[cell].n[i];
 					if (distance(me, np[pID].xyz) < particleRad && id.x != pID)
@@ -206,6 +206,13 @@ void Find(uint3 id : SV_DispatchThreadID)
 	}
 
 	neisBuffer[id.x].count = num;
+}
+
+[numthreads(32, 1, 1)]
+void Update(uint3 id : SV_DispatchThreadID)
+{
+	particles[id.x].vel = (np[id.x].xyz - particles[id.x].pos) / deltaTime;
+	particles[id.x].pos = np[id.x].xyz;
 }
 
 [numthreads(32, 1, 1)]
