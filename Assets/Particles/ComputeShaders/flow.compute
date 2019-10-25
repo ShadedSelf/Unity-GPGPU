@@ -105,30 +105,30 @@ void Particler (uint3 id : SV_DispatchThreadID)
 {
 	// iSeed = fromGridToIndex(id, gridSize) * frame * 999999; // Global seed
 	
-	// if (rand() < 0.002)
+	// if (rand() < 0.001)
 	// {
-	// 	particles[id.x].pos = normalize((rand3() * 2 - 1)) * 0.5 + float3(0, 1, 1);
+	// 	particles[id.x].pos = normalize((rand3() * 2 - 1)) * 1 + float3(0, 0, 3.5);
 	// 	particles[id.x].vel = 0;
 	// 	np[id.x].xyz = particles[id.x].pos;
 	// }
 
 	float3 vel = particles[id.x].vel;
 
-	// float3 n = 0;
-	// float mc = curls[id.x];
-	// for (uint i = 0; i < neisBuffer[id.x].count; ++i)
-	// {
-	// 	uint oID = neisBuffer[id.x].neis[i];
-	// 	Particle me = particles[id.x];
-	// 	Particle ot = particles[oID];
+	float3 n = 0;
+	float mc = curls[id.x];
+	for (uint i = 0; i < neisBuffer[id.x].count; ++i)
+	{
+		uint oID = neisBuffer[id.x].neis[i];
+		Particle me = particles[id.x];
+		Particle ot = particles[oID];
 
-	// 	n += length(curls[oID].xyz) * WS(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag));
+		n += length(curls[oID].xyz) * WS(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag));
 		
-	// 	vel += 0.000001 * (particles[oID].vel - vel) * (W(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag)));
-	// }
-	// n = (length(n) > 0) ? normalize(n) : 0;
-	// vel += 0.000065 * cross(n, curls[id.x].xyz);
-	// // vel += curls[id.x].xyz * 0.00001;
+		vel += 0.000001 * (particles[oID].vel - vel) * (W(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag)));
+	}
+	n = (length(n) > 0) ? normalize(n) : 0;
+	vel += 0.000065 * cross(n, curls[id.x].xyz);
+	// vel += curls[id.x].xyz * 0.00001;
 
 
 
