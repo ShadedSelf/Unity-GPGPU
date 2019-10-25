@@ -6,14 +6,21 @@
 #pragma kernel Lamb
 #pragma kernel Swap
 #pragma kernel Update
+#pragma kernel Curl
 
 #include "ComputeThings.cginc"
+#include "Random.hlsl"
 
+
+//-- Particles: --
 RWStructuredBuffer<Particle> particles;
-RWStructuredBuffer<SwapData> swapBuffer;
 RWStructuredBuffer<float4> np;
 RWStructuredBuffer<float4> tmp;
+RWStructuredBuffer<float4> curls;
 RWStructuredBuffer<float4> color;
+
+//-- Neighbouring: --
+RWStructuredBuffer<SwapData> swapBuffer;
 RWStructuredBuffer<CollisionData> collisionBuffer;
 RWStructuredBuffer<Nei> neisBuffer;
 RWStructuredBuffer<uint> cellCount;
@@ -26,6 +33,7 @@ float deltaTime;
 float particleRad;
 float maxVelocity;
 float time;
+uint frame;
 
 int particleCount;
 int cubeCount;
@@ -46,6 +54,7 @@ float mK;
 float mQ;
 float mE;
 
+//-- Gravity: --
 float mapG(float3 p)
 {
 	return sdTorus(p, float2(3, 1));
@@ -78,15 +87,55 @@ float3 calcNormal(in float3 pos)
 		map(pos + eps.yyx).x - map(pos - eps.yyx).x);
 	return normalize(nor);
 }
+//-------------
+
+//-- Test: --
+float getMass(int flag)
+{
+	return (flag == 0) ? 1 : 1;
+}
+float3 getNormal(int flag)
+{
+	return (flag == 0) ? float3(0, -1, 0) : float3(0, -1, 0);
+}
+//-----------
 
 [numthreads(32, 1, 1)]
 void Particler (uint3 id : SV_DispatchThreadID)
 {
+	// iSeed = fromGridToIndex(id, gridSize) * frame * 999999; // Global seed
+	
+	// if (rand() < 0.002)
+	// {
+	// 	particles[id.x].pos = normalize((rand3() * 2 - 1)) * 0.5 + float3(0, 1, 1);
+	// 	particles[id.x].vel = 0;
+	// 	np[id.x].xyz = particles[id.x].pos;
+	// }
+
 	float3 vel = particles[id.x].vel;
+
+	// float3 n = 0;
+	// float mc = curls[id.x];
+	// for (uint i = 0; i < neisBuffer[id.x].count; ++i)
+	// {
+	// 	uint oID = neisBuffer[id.x].neis[i];
+	// 	Particle me = particles[id.x];
+	// 	Particle ot = particles[oID];
+
+	// 	n += length(curls[oID].xyz) * WS(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag));
+		
+	// 	vel += 0.000001 * (particles[oID].vel - vel) * (W(me.pos - ot.pos, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag)));
+	// }
+	// n = (length(n) > 0) ? normalize(n) : 0;
+	// vel += 0.000065 * cross(n, curls[id.x].xyz);
+	// // vel += curls[id.x].xyz * 0.00001;
+
+
+
 	// if (length(vel) < 0.001) { return; }
 	// vel += -calcNormalG(np[id.x].xyz) * deltaTime * length(gravity);
-	vel /= 1 + length(vel) * 0.001;
-	vel += gravity * 0.05;// * deltaTime;
+	// vel /= 1 + length(vel) * 0.001;
+	vel += getNormal(particles[id.x].flag) * length(gravity) * 0.05;// * deltaTime;
 
 	float3 pos = np[id.x].xyz;
 	float3 np = pos + vel * deltaTime;
@@ -110,30 +159,42 @@ void Swap(uint3 id : SV_DispatchThreadID)
 	InterlockedAdd(cellCount[cell], 1, c);
 	nIndices[cell].n[c] = id.x;
 
-	color[id.x] = float4((np[id.x].xyz - particles[id.x].pos) / .15 * .5 + .5, 1);
+	float3 vel = particles[id.x].vel;
+	color[id.x] = float4(vel * 0.1 + 0.5, 1);
+	if (particles[id.x].flag == 1)
+	{
+		color[id.x] = 1 - color[id.x];
+		color[id.x] *= 0.3;
+	}
 }
 
 [numthreads(32, 1, 1)]
 void Lamb(uint3 id : SV_DispatchThreadID)
 {
 	float density = 0;
-	float gradient = 0;
+	float3 gradient = 0;
 	float3 me = np[id.x].xyz;
 
 	for (uint i = 0; i < neisBuffer[id.x].count; ++i)
 	{
-		float3 ot = np[neisBuffer[id.x].neis[i]].xyz;
-		float3 grad = WS(me - ot, particleRad) / rest; // * mass
-		gradient += dot(grad, grad);
-		density += W(me - ot, particleRad); // * mass
+		uint oID = neisBuffer[id.x].neis[i];
+
+		float3 ot = np[oID].xyz;
+		gradient += WS(me - ot, particleRad) * (getMass(particles[oID].flag)) / rest;
+		density += W(me - ot, particleRad) * (getMass(particles[oID].flag));
 	}
-	if (map(me) < radius)
-		density += W(me - calcNormal(me) * abs(map(me) - radius), particleRad);
+
+	// if (map(me) < radius)
+		// density += W(me - calcNormal(me) * abs(map(me) - radius), particleRad) * 80000;
+
+	// density += (me.x < -worldSize.x + particleRad || me.x > worldSize.x - particleRad) ? 100 : 0;
+	// density += (me.y < -worldSize.y + particleRad || me.y > worldSize.y - particleRad) ? 100 : 0;
+	// density += (me.z < -worldSize.z + particleRad || me.z > worldSize.z - particleRad) ? 100 : 0;
 	
-	float l = density / rest - 1; // = 0
-	// l = max(l, 0);
-	float lambda = -l / (gradient + ep);
+	float l = (density / rest) - 1; // = 0
+	float lambda = -l / (dot(gradient, gradient) + ep);
 	np[id.x].w = lambda;
+	// color[id.x] = 1 - l;
 }
 
 [numthreads(32, 1, 1)]
@@ -145,27 +206,21 @@ void Collision(uint3 id : SV_DispatchThreadID)
 
 	for (uint i = 0; i < neisBuffer[id.x].count; ++i)
 	{
-		float4 ot = np[neisBuffer[id.x].neis[i]];
+		uint oID = neisBuffer[id.x].neis[i];
+		float4 ot = np[oID];
 
 		float tension = pow(W(me.xyz - ot.xyz, particleRad) / W(particleRad * mQ, particleRad), mE);
 		float co = -mK * ((isnan(tension)) ? 0.0 : tension);
-		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad); // * mass
-	
-		// float3 grad = me.xyz - ot.xyz;
-		// float d = length(grad);
-		// float p = -min(d - particleRad, 0);
-		// dp += grad * p;
+		dp += (me.w + ot.w + co) * WS(me.xyz - ot.xyz, particleRad) * (getMass(particles[oID].flag) / getMass(particles[id.x].flag)); // * mass
 	}
 	dp /= rest;
 
 	float3 grad = calcNormal(me.xyz);
 	float d = map(me.xyz);
-	float c = (0.1) - d;
+	float c = (radius) - d;
 	dp += normalize(grad) * max(c, 0);
 
 	dp /= pow(currentIteration, 0.5);
-	// dp /= pow((iterations + 1) - currentIteration, 0.5);
-	// dp /= iterations;
 	tmp[id.x].xyz = dp;
 }
 
@@ -204,7 +259,6 @@ void Find(uint3 id : SV_DispatchThreadID)
 			}
 		}
 	}
-
 	neisBuffer[id.x].count = num;
 }
 
@@ -213,6 +267,23 @@ void Update(uint3 id : SV_DispatchThreadID)
 {
 	particles[id.x].vel = (np[id.x].xyz - particles[id.x].pos) / deltaTime;
 	particles[id.x].pos = np[id.x].xyz;
+}
+
+[numthreads(32, 1, 1)]
+void Curl(uint3 id : SV_DispatchThreadID)
+{
+	float3 curl = 0;
+	for (uint i = 0; i < neisBuffer[id.x].count; ++i)
+	{
+		uint oID = neisBuffer[id.x].neis[i];
+		Particle me = particles[id.x];
+		Particle ot = particles[oID];
+
+		float3 u = me.vel - ot.vel;
+		float3 v = WS(ot.pos - me.pos, particleRad);
+		curl += cross(u, v);
+	}
+	curls[id.x].xyz = curl;
 }
 
 [numthreads(32, 1, 1)]

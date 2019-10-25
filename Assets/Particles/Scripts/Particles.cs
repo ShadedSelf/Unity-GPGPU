@@ -33,10 +33,7 @@ public class Particles : MonoBehaviour
 	public bool compute = true;
 	public bool sort = true;
 	[Header("World")]
-	[Range(1, 4)]
-	public float dTMult = 1.5f;
 	public float maxVelocity = .5f;
-	public int gridSize = 5;
 	public Vector3 worldSize;
 	public Vector3 gravity;
 	[Header("Parts")]
@@ -55,15 +52,15 @@ public class Particles : MonoBehaviour
 	private ComputeBuffer drawArgs;
 	private Sorter sorter;
 
+	private Vector3Int gridSize;
 	int NextMultipleOf(int value, int x) => ((value / x) + 1) * x;
-	private const int nn = 256;
+	private const int nn = 128;
 
 	void OnEnable() 
 	{
 		material = new Material(shader);
 		particleCount = Mathf.NextPowerOfTwo(particleCount);
-		gridSize = (int)((worldSize.x * 2) / rad);
-		// gridSize = 30;
+		gridSize = new Vector3Int((int)((worldSize.x * 2) / rad), (int)((worldSize.y * 2) / rad), (int)((worldSize.z * 2) / rad));
 
 		sorter = new Sorter(particleCount, sortcs);
 		system = new ComputeSystem(particleCs, true);
@@ -76,9 +73,11 @@ public class Particles : MonoBehaviour
 		system.data.AddBuffer("neisBuffer",		particleCount, sizeof(uint) * (nn + 1));
 		system.data.AddBuffer("cubes",			cubes.Length, sizeof(float) * 4 * 6);
 		system.data.AddBuffer("color",			particleCount, sizeof(float) * 4);
-		system.data.AddBuffer("gridBuffer",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * 2);
-		system.data.AddBuffer("cellCount",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint));
-		system.data.AddBuffer("nIndices",		NextMultipleOf(gridSize * gridSize * gridSize, 32), sizeof(uint) * nn);
+		system.data.AddBuffer("curls",			particleCount, sizeof(float) * 4);
+		system.data.AddBuffer("test",			particleCount, sizeof(float) * 4 * nn); //
+		system.data.AddBuffer("gridBuffer",		NextMultipleOf(gridSize.x * gridSize.y * gridSize.z, 32), sizeof(uint) * 2);
+		system.data.AddBuffer("cellCount",		NextMultipleOf(gridSize.x * gridSize.y * gridSize.z, 32), sizeof(uint));
+		system.data.AddBuffer("nIndices",		NextMultipleOf(gridSize.x * gridSize.y * gridSize.z, 32), sizeof(uint) * nn);
 
 		system.AddKernel("Particler",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Swap",		new Vector3Int(particleCount, 1, 1));
@@ -87,7 +86,8 @@ public class Particles : MonoBehaviour
 		system.AddKernel("Collision",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("ApplyDelta",	new Vector3Int(particleCount, 1, 1));
 		system.AddKernel("Update",		new Vector3Int(particleCount, 1, 1));
-		system.AddKernel("Clear",		new Vector3Int(NextMultipleOf(gridSize * gridSize * gridSize, 32), 1, 1));
+		system.AddKernel("Curl",		new Vector3Int(particleCount, 1, 1));
+		system.AddKernel("Clear",		new Vector3Int(NextMultipleOf(gridSize.x * gridSize.y * gridSize.z, 32), 1, 1));
 
 		system.BindComputeData();
 		// material.SetBuffer("particles",	system.data.buffers["particles"]);
@@ -95,6 +95,8 @@ public class Particles : MonoBehaviour
         material.SetBuffer("color", 	system.data.buffers["color"]);
 		sorter.shader.SetBuffer(sorter.sortKernel, "collisionBuffer", system.data.buffers["collisionBuffer"]);
 		
+
+		//------------------------------
 		cmdBuff = new CommandBuffer();
 		cmdBuff.name = "Particle System";
 
@@ -111,6 +113,7 @@ public class Particles : MonoBehaviour
 			system.RecordDispatch("ApplyDelta", cmdBuff);
 		}
 		system.RecordDispatch("Update", cmdBuff);
+		system.RecordDispatch("Curl", cmdBuff);
 		system.RecordDispatch("Clear", cmdBuff);
 
 		SetData();
@@ -121,7 +124,8 @@ public class Particles : MonoBehaviour
 		Vector4[] newPositions = new Vector4[particleCount];
         for (int i = 0; i < particleCount; i++)
 		{
-            newPositions[i] = Random.insideUnitSphere * worldSize.x;
+            newPositions[i] = Random.insideUnitSphere * 3f - new Vector3(0, 0, 2);
+			// newPositions[i].w = 0.001f;
 		}
 		system.data.buffers["np"].SetData(newPositions);
 
@@ -131,7 +135,7 @@ public class Particles : MonoBehaviour
             particles[i].pos = newPositions[i];
             particles[i].vel = Vector3.zero;
             particles[i].mass = 1;
-            particles[i].flag = 0;
+            particles[i].flag = Random.Range(0, 2);
 		}
 		system.data.buffers["particles"].SetData(particles);
 
@@ -158,8 +162,9 @@ public class Particles : MonoBehaviour
 	/*-- Move to FixedUpdate -- */
 	void Update() 
 	{
-		system.shader.SetFloat("deltaTime", Time.deltaTime * dTMult);
+		system.shader.SetFloat("deltaTime", Time.deltaTime);
 		system.shader.SetFloat("time", Time.time);
+		system.shader.SetFloat("frame", Time.frameCount);
 		system.shader.SetFloat("particleRad", rad);
 		system.shader.SetFloat("rest", rest);
 		system.shader.SetFloat("maxVelocity", maxVelocity);
@@ -172,7 +177,7 @@ public class Particles : MonoBehaviour
 		system.shader.SetInt("iterations", iterations);
 		system.shader.SetInt("cubeCount", cubes.Length);
 		system.shader.SetInt("particleCount", particleCount);
-        system.shader.SetInts("gridSize", new int[3] { gridSize, gridSize, gridSize });
+        system.shader.SetInts("gridSize", new int[3] { gridSize.x, gridSize.y, gridSize.z });
 
         system.shader.SetVector("gravity", gravity);
 		system.shader.SetVector("worldSize", worldSize);

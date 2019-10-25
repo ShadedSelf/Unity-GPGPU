@@ -1,13 +1,13 @@
 #define PI acos(-1)
 static const float3 ZERO = float3(0, 0, 0);
-static const int nn = 256;
+static const int nn = 128;
 
 struct Particle
 {
 	float3 pos;
 	float3 vel;
 	float mass;
-	int propID;
+	int flag;
 };
 
 struct SwapData
@@ -80,7 +80,7 @@ bool checkAABB(float3 aPos, float3 aScale, float3 bPos, float3 bScale)
 			(aPos.z - aScale.z <= bPos.z + bScale.z && aPos.z + aScale.z >= bPos.z - bScale.z));
 }
 
-float4x4 rotationVectorToMatrix(float3 rot)
+float4x4 rot(float3 rot)
 {
 	float sir = sin(rot.z);
 	float sor = cos(rot.z);
@@ -112,7 +112,7 @@ float4x4 rotationVectorToMatrix(float3 rot)
 
 float W(float3 r, float h)
 {
-	return (length(r) >= 0 && h >= length(r)) ?
+	return (length(r) > 0 && h >= length(r)) ?
 		(315 / (64 * PI * pow(h, 9))) * pow((pow(h, 2) - pow(length(r), 2)), 3) :
 		0;
 }

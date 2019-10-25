@@ -100,24 +100,23 @@ void testFolds()
 //p *= clamp(max(MR2 / dot(p, p), MR2), 0.0, 1.0);
 //p = abs(mod(p + angle.x, angle.x * 4) - angle.x * 2) - angle.x;
 
+float3 planeFold(float3 p, float3 normal, float offset)
+{
+	return p - 2 * max(0, dot(p, normal) - offset) * normal;
+}
 
-#define fixedRadius2    (1.1)
-#define minRadius2      (0.11)
+float3 sphereFold(float3 p, float rad2, float minRad2, float3 offset, inout float dz)
+{
+	float3 foldPoint = p + offset;
+	float r2 = dot(foldPoint, foldPoint);
+	float inv = (rad2 / clamp(r2, minRad2, rad2));
+	dz *= (r2 < rad2) ? inv : 1;
+	return p * inv;
+}
 
-float3 sphereFold(float3 z, float dz) {
-	float r2 = dot(z,z);
-	if (r2 < minRadius2) { 
-		// linear inner scaling
-		float temp = (fixedRadius2/minRadius2);
-		z *= temp;
-		dz*= temp;
-	} else if (r2 < fixedRadius2) { 
-		// this is the actual sphere inversion
-		float temp =(fixedRadius2/r2);
-		z *= temp;
-		dz*= temp;
-	}
-	return z;
+float3 boxFold(float3 p, float3 r)
+{
+	return clamp(p, -r, r) * 2.0 - p;
 }
 
 float2 st;
@@ -125,17 +124,22 @@ float color(float3 p)
 {
 	float	m = 1,
 			o = 1;
-			// p = sphereFold(p + float3(0, 1, 0), 1.0);
+
+	float dz = 1;
 	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
-	for (int n = 0; n < _ColorIterations; n++)
+	for (int n = 0; n < _Iterations; n++)
 	{
 		p = mul(p, rot(_PreRotVec, _PreRotAngle));
 		for (int j = 0; j < numFolds; j++)
 		{
 			p = (int)folds[j].w ?
 				((int3)folds[j].xyz ? abs(p) : p) :
-				p - 2 * max(0, dot(p, folds[j].xyz) - 0) * folds[j].xyz;
+				planeFold(p, folds[j].xyz, 0);
 		}
+		// p = sphereFold(p, _R0.x, _R0.y, dz);
+		p = sphereFold(p, _R0.x, _R0.y, float3(0, 0, 0), dz);
+		// p = boxFold(p, _R0.xyz);
+
 		p = mul(p - _OffSet, rot(_PostRotVec, _PostRotAngle)) + _OffSet;
 		p = p * _Scale - _OffSet * (_Scale - 1.0);
 
@@ -149,7 +153,7 @@ float color(float3 p)
 
 float map(float3 p)
 {
-		// p = sphereFold(p + float3(0, 1, 0), 1.0);
+	float dz = 1;
 	p = mul(p, rot(_PreRotVec, -_PreRotAngle));
 	for (int n = 0; n < _Iterations; n++)
 	{
@@ -158,12 +162,16 @@ float map(float3 p)
 		{
 			p = (int)folds[j].w ?
 				((int3)folds[j].xyz ? abs(p) : p) :
-				p - 2 * max(0, dot(p, folds[j].xyz) - 0) * folds[j].xyz;
+				planeFold(p, folds[j].xyz, 0);
 		}
+		// p = sphereFold(p, _R0.x, _R0.y, dz);
+		p = sphereFold(p, _R0.x, _R0.y, float3(0, 0, 0), dz);
+		// p = boxFold(p, _R0.xyz);
+
 		p = mul(p - _OffSet, rot(_PostRotVec, _PostRotAngle)) + _OffSet;
 		p = p * _Scale - _OffSet * (_Scale - 1.0);
 	}
-	return (length(p) - _Rad) * pow(_Scale, -float(_Iterations));
+	return (length(p) - _Rad) * pow(_Scale, -float(_Iterations)) / abs(dz);
 }
 
 float3 calcNormal(in float3 pos)
